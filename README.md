@@ -1,86 +1,126 @@
-# VEX Rapid Innovation Challenge
+# VEX Rapid Innovation Challenge — Control Center
 
-An interactive project guide and engineering notebook for **The Science Exchange Program at LSTS**. The site supports three international teams through the 180-minute **Emergency Supply Delivery Robot** challenge.
+A fast, student-facing control center for the **VEX Rapid Innovation Challenge** at LSTS.
 
-The student-facing experience is in clear English and includes:
+**Build. Practice. Improve. Compete.**
 
-- Team setup, roles, design priorities and constraints
-- Baseline observation and a guided hypothesis builder
-- Design planning, sketch upload and build checkpoints
-- Baseline, Trial 1–3 and Final Test data entry
-- A live comparison chart built only from student-entered data
-- Analysis, Presentation View, rubric and reflection
-- Autosave, JSON import/export, CSV test export and a printable project summary
+The site is designed for three teams of four students. Every team completes the same mission:
+
+> Collect as many Cups and Pins as possible from the Supply Zone and deliver them to the team's Delivery Zone.
+
+## What is included
+
+- Five focused sections: Home, Mission & Field, Build & Practice, Match Mode and Results
+- The original `Pictures/Field.jpg` field map, with full-screen viewing and zoom controls
+- One-minute individual practice and four-minute full-match practice
+- A timestamp-based 4:00 Match Timer with Pause, Resume and reload recovery
+- Automatic Driver 1–4 rotation at 3:00, 2:00 and 1:00
+- Visual and optional sound alerts for `CHANGE DRIVER!` and `MATCH ENDED`
+- Cup and Pin counters using only `Cups × 5 + Pins × 10`
+- Optional score lock when a match ends, with a manual correction unlock
+- Local result history, tied leaderboard ranks, printing and CSV export
+- Automatic saving to browser `localStorage`; no account, backend or API key
+- Responsive layouts for laptops, landscape tablets, projectors and phones
+- Keyboard focus states, labels, alt text and reduced-motion support
 
 ## Requirements
 
-- Node.js 20 or newer (Node.js 22 recommended)
+- Node.js 20 or newer
 - npm 10 or newer
 
-No backend, API key, account or paid service is required.
+No paid service or additional runtime is required.
 
-## Install
+## Install and run
 
 ```bash
 npm install
-```
-
-## Run locally
-
-```bash
 npm run dev
 ```
 
-Open the local address shown in the terminal. The default development address is `http://127.0.0.1:4173/`.
+Open the local URL shown in the terminal. The default port is `4173`.
 
-## Build
+## Test and build
 
 ```bash
+npm test
 npm run build
 ```
 
-The static production site is written to `dist/`. To inspect that build locally:
+The production site is written to `dist/`. Preview that exact production output with:
 
 ```bash
 npm run preview
 ```
 
+Then open `http://127.0.0.1:4173/`.
+
+The automated tests verify:
+
+- `0 Cups, 0 Pins = 0`
+- `1 Cup, 0 Pins = 5`
+- `0 Cups, 1 Pin = 10`
+- `3 Cups, 2 Pins = 35`
+- Negative counts are clamped to zero
+- Driver changes occur at exactly `3:00`, `2:00` and `1:00`
+- Timer formatting ends at `0:00`
+
 ## Deploy to GitHub Pages
 
-This repository includes `.github/workflows/deploy-pages.yml` and uses relative asset paths, so it works for both a user site and a project site.
+The repository already contains `.github/workflows/deploy-pages.yml`. It builds `dist/` and publishes it with the official GitHub Pages actions.
 
-1. Create a GitHub repository and push this project to the `main` branch.
-2. In GitHub, open **Settings → Pages**.
-3. Under **Build and deployment**, select **GitHub Actions** as the source.
-4. Push to `main`, or run **Deploy VEX Challenge to GitHub Pages** manually from the Actions tab.
-5. The workflow installs packages, builds `dist/` and publishes the result.
+1. Upload the **whole project**, including all folders and the hidden `.github` folder, to the repository's `main` branch.
+2. On GitHub, open **Settings → Pages**.
+3. Under **Build and deployment → Source**, select **GitHub Actions**.
+4. Open the **Actions** tab and select **Deploy VEX Challenge to GitHub Pages**.
+5. Choose **Run workflow**, or push a new commit to `main`.
+6. Wait for both the `build` and `deploy` jobs to become green.
+7. Open the address shown in the deployment job. For a project repository it normally looks like:
 
-## Edit content
+   `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/`
 
-- Challenge structure, roles, priorities, constraints, timeline, rubric and glossary: `src/data/challenge.js`
-- Page content and interaction layouts: `src/App.jsx`
-- Shared controls, timers, chart and navigation: `src/components/Common.jsx`
-- Visual system and responsive/print styles: `src/styles.css`
-- Landing image: `public/challenge-hero.png`
+The Vite build uses relative asset paths, so it works under a repository subpath without manually editing the repository name.
 
-Keep student data defaults blank. Do not add example trial values to `createInitialProject()`.
+### If GitHub Pages shows 404
 
-## Local data and moving devices
+- Confirm the repository contains `index.html`, `package.json`, `src/`, `public/`, and `.github/workflows/deploy-pages.yml`.
+- Confirm **Settings → Pages → Source** is set to **GitHub Actions**, not `Deploy from a branch`.
+- Confirm the workflow ran on the `main` branch and both jobs succeeded.
+- Open the deployment URL from the Actions result instead of guessing the URL.
+- Repository names and URLs are case-sensitive.
 
-The app autosaves the project in browser `localStorage`. Data remains on the current browser and device; it does not sync automatically.
+The workflow follows GitHub's documented Pages flow: checkout, build, configure Pages, upload the `dist` artifact and deploy it.
 
-- **Export** downloads the complete project as JSON.
-- **Import** restores an exported JSON project on another device.
-- **Export testing CSV** downloads the five-row test table.
-- **Reset** displays a clear confirmation before deleting local project data.
-- **Print / Save PDF** uses the browser’s print dialog on the Team Project Summary page.
+## Project structure
 
-Large uploaded sketches may exceed browser storage limits. The interface accepts images up to 1.5 MB to keep local saving reliable.
+```text
+src/
+  App.jsx                  Main five-section experience and interactions
+  data/challenge.js        Mission, rules, steps and initial local data
+  hooks/useProject.js      localStorage persistence
+  utils/challenge.js       Scoring and timer phase utilities
+  styles.css               Visual system, responsive and print styles
+public/images/
+  field.jpg                Exact supplied field map
+  v5-clawbot.webp          Supplied Clawbot visual
+  cup-and-pin.jfif         Supplied scoring objects
+  international-teams.webp Optimized supplied team photo
+test/challenge.test.js     Scoring and timing tests
+scripts/
+  build.mjs                Production build
+  dev.mjs                  Local Vite server
+  preview.mjs              Dependency-free production preview
+```
 
-## Accessibility and responsive behavior
+## Local data
 
-The interface includes semantic headings, labels for form controls, keyboard focus states, alt text, ARIA names, non-color status labels and reduced-motion support. Layouts are optimized for laptops and tablets and adapt to a mobile navigation drawer below 760 px.
+Team setup, short improvement notes, practice checks, timer state, score and match history are saved on the current browser and device only.
 
-## Source notes
+- Reloading a paused match preserves its time and score.
+- Reloading a running match recalculates time from its real end timestamp.
+- Saving the same match again updates its existing record instead of adding the score twice.
+- **Clear Results** and all timer/score resets require confirmation.
+- Clearing browser storage removes saved data.
 
-The lesson sequence and student content were adapted from the provided `VEX Rapid Innovation Challenge.docx` and `VEX_Rapid_Innovation_Challenge_3_Hours.pptx`. The landing visual was extracted from the user-provided PowerPoint. The activity uses selected Override elements as an engineering context and does not reproduce the full official competition rules.
+## Source assets
+
+All challenge visuals come from the supplied project assets. `Field.jpg` is copied without visual changes. The large international team photograph is resized to WebP for faster loading; the original remains in `Pictures/`.

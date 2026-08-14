@@ -1,324 +1,676 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  constraints, finalProducts, glossary, pageOrder, priorities, roles, rubricCriteria, stages, testMetrics, timeline,
+  ACTIVITY_TIMELINE,
+  BUILD_STEPS,
+  DRIVER_PHASES,
+  MATCH_TYPES,
+  MISSION,
+  NAV_ITEMS,
+  START_RULES,
+  createTimer,
+  makeId,
 } from './data/challenge';
 import { useProject } from './hooks/useProject';
-import {
-  AppShell, Callout, Checkbox, Field, PerformanceChart, SectionTitle, StatusControl, TextArea, Timer,
-} from './components/Common';
+import { calculateScore, driverFromRemaining, formatTime } from './utils/challenge';
 
-const downloadFile = (name, content, type) => {
+const csvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+
+const downloadText = (filename, content, type) => {
   const url = URL.createObjectURL(new Blob([content], { type }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-const safeName = (value) => (value || 'vex-project').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+function useTimestampTimer(timer, setTimer, options = {}) {
+  const { resolveDriver = driverFromRemaining } = options;
+  const driverCallback = useRef(options.onDriverChange);
+  const endCallback = useRef(options.onEnd);
+  const handledDriver = useRef(timer.lastDriver ?? 0);
+  const endedForRun = useRef(timer.status === 'ended');
+  const getRemaining = useCallback(() => (
+    timer.status === 'running' && timer.endAt
+      ? Math.max(0, timer.endAt - Date.now())
+      : Math.max(0, timer.remainingMs)
+  ), [timer.endAt, timer.remainingMs, timer.status]);
+  const [remainingMs, setRemainingMs] = useState(getRemaining);
 
-function Landing({ hasSession, onStart, onContinue }) {
+  driverCallback.current = options.onDriverChange;
+  endCallback.current = options.onEnd;
+
+  useEffect(() => {
+    handledDriver.current = timer.lastDriver ?? 0;
+    if (timer.status !== 'running') {
+      setRemainingMs(Math.max(0, timer.remainingMs));
+      if (timer.status !== 'ended') endedForRun.current = false;
+    }
+  }, [timer.lastDriver, timer.remainingMs, timer.status]);
+
+  useEffect(() => {
+    if (timer.status !== 'running' || !timer.endAt) return undefined;
+
+    const tick = () => {
+      const next = Math.max(0, timer.endAt - Date.now());
+      setRemainingMs(next);
+      const nextDriver = resolveDriver(next, timer.durationMs);
+
+      if (next > 0 && nextDriver !== handledDriver.current) {
+        const previousDriver = handledDriver.current;
+        handledDriver.current = nextDriver;
+        setTimer({ ...timer, remainingMs: next, lastDriver: nextDriver });
+        driverCallback.current?.(nextDriver, previousDriver);
+      }
+
+      if (next === 0 && !endedForRun.current) {
+        endedForRun.current = true;
+        setTimer({ ...timer, status: 'ended', remainingMs: 0, endAt: null, lastDriver: resolveDriver(0, timer.durationMs) });
+        endCallback.current?.();
+      }
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 125);
+    return () => window.clearInterval(interval);
+  }, [resolveDriver, setTimer, timer]);
+
+  const start = () => {
+    const available = timer.status === 'paused' ? timer.remainingMs : timer.durationMs;
+    if (available <= 0 || timer.status === 'running') return;
+    endedForRun.current = false;
+    const initialDriver = resolveDriver(available, timer.durationMs);
+    handledDriver.current = initialDriver;
+    setRemainingMs(available);
+    setTimer({
+      ...timer,
+      status: 'running',
+      remainingMs: available,
+      endAt: Date.now() + available,
+      lastDriver: initialDriver,
+    });
+  };
+
+  const pause = () => {
+    if (timer.status !== 'running') return;
+    const next = getRemaining();
+    setRemainingMs(next);
+    setTimer({ ...timer, status: 'paused', remainingMs: next, endAt: null });
+  };
+
+  const reset = () => {
+    handledDriver.current = 0;
+    endedForRun.current = false;
+    setRemainingMs(timer.durationMs);
+    setTimer(createTimer(timer.durationMs));
+  };
+
+  const end = () => {
+    endedForRun.current = true;
+    setRemainingMs(0);
+    setTimer({ ...timer, status: 'ended', remainingMs: 0, endAt: null });
+  };
+
+  return {
+    remainingMs,
+    display: formatTime(remainingMs),
+    currentDriver: resolveDriver(remainingMs, timer.durationMs),
+    status: timer.status,
+    start,
+    pause,
+    reset,
+    end,
+  };
+}
+
+function Icon({ children }) {
+  return <span className="icon" aria-hidden="true">{children}</span>;
+}
+
+function Header({ currentView, goTo, saveState, matchScore, currentDriver }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
-    <main className="landing" id="main-content">
-      <div className="landing-copy">
-        <span className="program-label">The Science Exchange Program at LSTS</span>
-        <h1>VEX Rapid<br />Innovation Challenge</h1>
-        <p className="landing-subtitle">Emergency Supply Delivery Robot</p>
-        <div className="landing-facts" aria-label="Challenge facts">
-          <span><strong>12</strong> students</span><span><strong>4</strong> schools</span><span><strong>3</strong> international teams</span><span><strong>180</strong> minutes</span>
-        </div>
-        <p className="landing-mantra">Design. Test. Improve. Defend with evidence.</p>
-        <div className="landing-actions">
-          <button className="button button-primary button-large" onClick={onStart}>Start the Challenge <span aria-hidden="true">→</span></button>
-          {hasSession && <button className="button button-light button-large" onClick={onContinue}>Continue Previous Session</button>}
-        </div>
-        <p className="device-note">Your work autosaves on this device. Export it to move to another device.</p>
+    <header className="site-header">
+      <button className="brand" type="button" onClick={() => goTo('home')} aria-label="VEX Challenge home">
+        <span className="brand-v">V</span><span>VEX <b>Control Center</b></span>
+      </button>
+      <button className="menu-button" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>Menu</button>
+      <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'} aria-label="Main navigation">
+        {NAV_ITEMS.map(([id, label]) => (
+          <button key={id} type="button" className={currentView === id ? 'active' : ''} onClick={() => { goTo(id); setMenuOpen(false); }}>{label}</button>
+        ))}
+      </nav>
+      <div className="header-live" aria-label={`Current score ${matchScore}, Driver ${currentDriver + 1}`}>
+        <span>D{currentDriver + 1}</span><strong>{matchScore} pts</strong>
       </div>
-      <div className="landing-visual">
-        <img src="./challenge-hero.png" alt="Three international students working together with an emergency supply delivery robot" />
-        <div className="zone-strip" aria-label="Mission route"><span>Supply zone</span><i>→</i><span>Travel zone</span><i>→</i><span>Delivery zone</span></div>
+      <span className="save-state"><i />{saveState}</span>
+    </header>
+  );
+}
+
+function FieldViewer({ onClose }) {
+  const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', closeOnEscape);
+    document.body.classList.add('modal-open');
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.classList.remove('modal-open');
+    };
+  }, [onClose]);
+
+  return (
+    <div className="field-modal" role="dialog" aria-modal="true" aria-label="Full field map">
+      <div className="field-modal-bar">
+        <strong>Official Challenge Field</strong>
+        <div>
+          <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(1, value - 0.25))}>−</button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(3, value + 0.25))}>+</button>
+          <button type="button" className="close-field" onClick={onClose}>Close</button>
+        </div>
+      </div>
+      <div className="field-pan">
+        <img src="./images/field.jpg" alt="Challenge field showing the central Supply Zone, three team zones, three delivery zones, robot starts and student standing positions" style={{ width: `${zoom * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Home({ project, update, goTo }) {
+  return (
+    <main id="main-content" className="home-page">
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="eyebrow">The Science Exchange Program at LSTS</span>
+          <h1>VEX Rapid<br /><em>Innovation</em> Challenge</h1>
+          <p className="hero-tagline">Build. Practice. Improve. Compete.</p>
+          <p className="mission-line">{MISSION}</p>
+          <button className="primary-action" type="button" onClick={() => goTo('mission')}>Start Challenge <span aria-hidden="true">→</span></button>
+        </div>
+        <div className="hero-visual">
+          <div className="hero-orbit" aria-hidden="true" />
+          <img src="./images/v5-clawbot.webp" alt="VEX V5 Clawbot ready for the rapid innovation challenge" />
+          <span className="hero-label">V5 CLAWBOT</span>
+        </div>
+        <div className="hero-facts" aria-label="Challenge facts">
+          <div><strong>3</strong><span>Teams</span></div>
+          <div><strong>4</strong><span>Students / team</span></div>
+          <div><strong>4:00</strong><span>Match</span></div>
+          <div><strong>5</strong><span>Points / Cup</span></div>
+          <div><strong>10</strong><span>Points / Pin</span></div>
+        </div>
+      </section>
+
+      <section className="team-setup section-wrap" aria-labelledby="team-setup-title">
+        <div>
+          <span className="eyebrow">Quick setup</span>
+          <h2 id="team-setup-title">Who is driving?</h2>
+          <p>Names are optional. The order below becomes the match rotation.</p>
+        </div>
+        <label className="input-field team-name"><span>Team name</span><input value={project.team.name} onChange={(event) => update('team.name', event.target.value)} placeholder="e.g. Team 1" /></label>
+        <div className="driver-inputs">
+          {project.team.members.map((name, index) => (
+            <label className="input-field" key={`member-${index}`}><span>Driver {index + 1}</span><input value={name} onChange={(event) => update(['team', 'members', index], event.target.value)} placeholder={`Student ${index + 1}`} /></label>
+          ))}
+        </div>
+      </section>
+
+      <section className="timeline-section section-wrap" aria-labelledby="timeline-title">
+        <div className="timeline-intro">
+          <span className="eyebrow">Flexible 180-minute plan</span>
+          <h2 id="timeline-title">One fast engineering sprint</h2>
+          <p>Suggested pacing only. Teachers can adjust it at any time.</p>
+        </div>
+        <ol className="activity-timeline">
+          {ACTIVITY_TIMELINE.map(([number, title, time]) => <li key={number}><span>{number}</span><div><strong>{title}</strong><small>{time}</small></div></li>)}
+        </ol>
+      </section>
+
+      <section className="community-banner section-wrap">
+        <img src="./images/international-teams.webp" alt="International robotics students gathered together at LSTS" loading="lazy" />
+        <div><span className="eyebrow">LSTS · Bailing · Lishan · KangChiao</span><h2>One challenge. Three international teams.</h2></div>
+      </section>
+    </main>
+  );
+}
+
+function Mission({ acknowledged, acknowledge, openField, goTo }) {
+  return (
+    <main id="main-content" className="mission-page page-shell">
+      <header className="page-lead">
+        <span className="step-tag">01 · Mission & Field</span>
+        <h1>Collect. Carry. Deliver.</h1>
+        <p>{MISSION}</p>
+      </header>
+
+      <section className="field-stage" aria-labelledby="field-title">
+        <div className="field-heading"><div><span className="eyebrow">Official layout</span><h2 id="field-title">Know your route</h2></div><button type="button" className="secondary-action" onClick={openField}>View Full Field</button></div>
+        <button className="field-image-button" type="button" onClick={openField} aria-label="Open full field map">
+          <img src="./images/field.jpg" alt="Challenge field with Supply Zone, Team 1, Team 2, Team 3, all robot starts and delivery zones" />
+          <span>Tap to enlarge</span>
+        </button>
+      </section>
+
+      <section className="rules-strip" aria-label="Starting rules">
+        {START_RULES.map(([number, rule]) => <div key={number}><span>{number}</span><strong>{rule}</strong></div>)}
+      </section>
+
+      <section className="scoring-explainer">
+        <div className="object-visual"><img src="./images/cup-and-pin.jfif" alt="VEX Cup and Pin game objects" loading="lazy" /></div>
+        <div className="scoring-copy"><span className="eyebrow">Scoring</span><h2>Two objects. One formula.</h2><p>Total Score = Cups × 5 + Pins × 10</p></div>
+        <div className="score-values"><div><span>Cup</span><strong>5</strong><small>points</small></div><div><span>Pin</span><strong>10</strong><small>points</small></div></div>
+      </section>
+
+      <div className="page-action-row">
+        {acknowledged && <span className="complete-note">✓ Mission understood</span>}
+        <button className="primary-action" type="button" onClick={() => { acknowledge(); goTo('build'); }}>I Understand the Mission <span aria-hidden="true">→</span></button>
       </div>
     </main>
   );
 }
 
-function DashboardPage({ project, update, goTo }) {
-  const completed = stages.filter((stage) => project.stageStatus[stage.id] === 'completed').length;
+function TimerControls({ timer, onReset, startLabel = 'Start' }) {
   return (
-    <>
-      <SectionTitle eyebrow="Project dashboard" title={`Ready, ${project.team.name || 'engineering team'}?`} intro="Move at your team’s pace. Steps are never locked, and you can return to earlier evidence at any time." />
-      <Callout tone="yellow" label="Driving question">How might we adapt a VEX Clawbot to deliver emergency supplies effectively under different real-world priorities?</Callout>
-      <section className="dashboard-overview">
-        <div><span>Overall progress</span><strong>{completed} of 6 stages complete</strong></div>
-        <div><span>Design priority</span><strong>{priorities.find((item) => item.id === project.priority)?.title || 'Not selected yet'}</strong></div>
-        <div><span>Time plan</span><strong>180-minute sprint</strong></div>
-      </section>
-      <div className="stage-list">
-        {stages.map((stage, index) => (
-          <article className={`stage-row status-${project.stageStatus[stage.id]}`} key={stage.id}>
-            <div className="stage-number">{String(index + 1).padStart(2, '0')}</div>
-            <div className="stage-main"><span className="stage-time">{stage.time}</span><h2>{stage.label}</h2><ul>{stage.deliverables.map((item) => <li key={item}>{item}</li>)}</ul></div>
-            <StatusControl value={project.stageStatus[stage.id]} onChange={(value) => update(['stageStatus', stage.id], value)} />
-            <button className="button" onClick={() => goTo(stage.page)}>Continue →</button>
-          </article>
-        ))}
-      </div>
-      <section className="timeline-block">
-        <div className="section-heading"><span className="eyebrow">Suggested pacing</span><h2>One sprint, ten activity windows</h2><p>Times guide your work; they do not lock the website.</p></div>
-        <div className="timeline-grid">{timeline.map(([time, label]) => <div key={time}><strong>{time}</strong><span>{label}</span></div>)}</div>
-      </section>
-    </>
-  );
-}
-
-function BriefPage() {
-  return (
-    <>
-      <SectionTitle eyebrow="01 · Project brief" title="Robots can go where people cannot" intro="A disaster has made several delivery areas unsafe. Your team must adapt a working VEX V5 Clawbot to collect and deliver emergency supplies." action={<Timer minutes={15} label="Brief timer" compact />} />
-      <section className="mission-map" aria-label="Emergency supply mission map">
-        <div className="mission-zone supply"><span>01</span><strong>Supply Zone</strong><p>Collect cups and pins.</p></div><div className="mission-arrow">→</div>
-        <div className="mission-zone travel"><span>02</span><strong>Travel Zone</strong><p>Navigate a safe route.</p></div><div className="mission-arrow">→</div>
-        <div className="mission-zone delivery"><span>03</span><strong>Delivery Zone</strong><p>Place supplies at goals.</p></div>
-      </section>
-      <div className="split-layout">
-        <section><span className="eyebrow">Mission language</span><h2>What each game element represents</h2><dl className="definition-list"><div><dt>Cups</dt><dd>Food and medicine</dd></div><div><dt>Pins</dt><dd>Medical tools and urgent supplies</dd></div><div><dt>Goals</dt><dd>Delivery stations</dd></div><div><dt>Field zones</dt><dd>Supply, travel and delivery areas</dd></div></dl></section>
-        <section className="dark-panel"><span className="eyebrow">Engineering lens</span><h2>This is an open design challenge.</h2><ul className="clean-list"><li>We use selected Override game elements, not the full competition rules.</li><li>There is no single correct answer.</li><li>Every team must create its own solution.</li><li>Evidence makes a solution convincing.</li></ul></section>
-      </div>
-      <Callout label="Remember">Your team is improving one focused part of an already working robot—not rebuilding the whole machine.</Callout>
-    </>
-  );
-}
-
-function GoalsPage() {
-  const columns = [
-    ['Know', 'blue', ['Clawbot components', 'Engineering Design Process', 'Design criteria and constraints', 'Baseline, trial, data and evidence']],
-    ['Understand', 'yellow', ['Many engineering solutions can work.', 'Every design involves trade-offs.', 'Data is stronger than opinion.', 'Failure provides information for improvement.', 'A convincing engineering claim requires evidence.']],
-    ['Do', 'green', ['Identify a specific problem.', 'Develop a testable hypothesis.', 'Create one focused improvement.', 'Run controlled trials.', 'Compare baseline and prototype performance.', 'Present and defend a solution with evidence.']],
-  ];
-  return (
-    <><SectionTitle eyebrow="Learning goals · KUD" title="Know it. Understand it. Use it." intro="By the end of the challenge, your team should be able to explain both what changed and why the evidence supports that change." />
-      <div className="kud-grid">{columns.map(([title, color, items]) => <section className={`kud-column kud-${color}`} key={title}><span className="eyebrow">{title}</span><ol>{items.map((item) => <li key={item}>{item}</li>)}</ol></section>)}</div>
-      <Callout tone="yellow" label="Evidence mindset">There is no single correct answer. Your evidence will make your solution convincing.</Callout>
-    </>
-  );
-}
-
-function TeamPage({ project, update }) {
-  return (
-    <><SectionTitle eyebrow="Team setup · 15 minutes" title="Four people, four shared responsibilities" intro="Roles clarify ownership. They do not limit who may contribute ideas, build, test or speak." action={<Timer minutes={15} label="Team setup" compact />} />
-      <div className="form-grid two"><Field label="Team name" value={project.team.name} onChange={(value) => update('team.name', value)} placeholder="Create a team name" /><Field label="Schools represented" hint="LSTS, Bailing, Lishan, KangChiao" value={project.team.schools} onChange={(value) => update('team.schools', value)} placeholder="List your schools" /></div>
-      <div className="role-list">{project.team.members.map((member, index) => <section className="role-row" key={member.role}><div className="role-index">0{index + 1}</div><div><h2>{member.role}</h2><p>{roles[index][1]}</p></div><Field label="Student name" value={member.name} onChange={(value) => update(['team', 'members', index, 'name'], value)} placeholder="Name" /><Field label="School" value={member.school} onChange={(value) => update(['team', 'members', index, 'school'], value)} placeholder="School" /></section>)}</div>
-      <Checkbox checked={project.team.agreement} onChange={(value) => update('team.agreement', value)}>Everyone contributes ideas, understands the design and participates in the final presentation.</Checkbox>
-    </>
-  );
-}
-
-function PriorityPage({ project, update }) {
-  return (
-    <><SectionTitle eyebrow="Design priority card" title="Same mission. Three different priorities." intro="Choose the priority your team will defend. You can change it later if it was selected by mistake." />
-      <div className="priority-grid">{priorities.map((item) => <article className={`priority-card priority-${item.color} ${project.priority === item.id ? 'selected' : ''}`} key={item.id}><div className="priority-top"><span>{item.label}</span>{project.priority === item.id && <strong>Selected ✓</strong>}</div><h2>{item.title}</h2><p className="priority-mission">{item.mission}</p><div><h3>Design focus</h3><p>{item.focus}</p></div><div><h3>Ask your team</h3><ul>{item.questions.map((question) => <li key={question}>{question}</li>)}</ul></div><div><h3>Success looks like</h3><p>{item.success}</p></div><button className="button" onClick={() => update('priority', item.id)}>{project.priority === item.id ? 'Priority confirmed' : 'Choose this priority'}</button></article>)}</div>
-    </>
-  );
-}
-
-function ConstraintsPage({ project, update }) {
-  const complete = project.constraints.every(Boolean);
-  return (
-    <><SectionTitle eyebrow="Design constraints" title="Keep the challenge focused, fair and safe" intro="Read every constraint together before anyone changes the robot." />
-      <div className="constraint-layout"><section className="check-stack">{constraints.map((item, index) => <Checkbox key={item} checked={project.constraints[index]} onChange={(value) => update(['constraints', index], value)}>{item}</Checkbox>)}</section><aside className="stop-check"><span>Stop</span><i>→</i><span>Check</span><i>→</i><span>Test</span><p>Pause before every run. Confirm the attachment is secure, the field is clear and the start position is consistent.</p></aside></div>
-      <Checkbox checked={project.constraintsConfirmed} disabled={!complete} onChange={(value) => update('constraintsConfirmed', value)}>Our team has read every constraint and agrees to STOP → CHECK → TEST.</Checkbox>
-      {!complete && <p className="inline-warning">Check all seven constraints before confirming.</p>}
-    </>
-  );
-}
-
-function BaselinePage({ project, update }) {
-  const setMetric = (key, value) => { update(['baseline', key], value); if (['delivered', 'correct', 'drops', 'time'].includes(key)) update(['tests', 0, key], value); };
-  return (
-    <><SectionTitle eyebrow="Stage 2 · Baseline · 15 minutes" title="Observe before you redesign" intro="Run the original Clawbot for 60 seconds. Do not modify it yet." action={<Timer minutes={1} label="Robot run" compact />} />
-      <div className="baseline-layout"><section><h2>Record the original performance</h2><div className="form-grid three"><Field label="Objects reached" type="number" min="0" value={project.baseline.reached} onChange={(value) => setMetric('reached', value)} /><Field label="Objects delivered" type="number" min="0" value={project.baseline.delivered} onChange={(value) => setMetric('delivered', value)} /><Field label="Correct placements" type="number" min="0" value={project.baseline.correct} onChange={(value) => setMetric('correct', value)} /><Field label="Drops / errors" type="number" min="0" value={project.baseline.drops} onChange={(value) => setMetric('drops', value)} /><Field label="Completion time (seconds)" type="number" min="0" max="60" value={project.baseline.time} onChange={(value) => setMetric('time', value)} /></div><TextArea label="Observed difficulties" value={project.baseline.difficulties} onChange={(value) => update('baseline.difficulties', value)} placeholder="Describe what the team noticed during the run." /></section>
-        <section className="observe-panel"><span className="eyebrow">Observe</span><h2>Look for a useful failure</h2>{[['failed', 'What failed?'], ['lostTime', 'Where was time lost?'], ['dropCause', 'What caused drops?'], ['controlDifficulty', 'What was difficult to control?']].map(([key, label]) => <TextArea key={key} label={label} rows={2} value={project.baseline[key]} onChange={(value) => update(['baseline', key], value)} />)}</section></div>
-      <Callout tone="yellow" label="Why baseline matters">You need a fair “before” result to show whether the new design is actually better.</Callout>
-    </>
-  );
-}
-
-function InquiryPage({ project, update, goTo }) {
-  const q = project.inquiry;
-  const sentence = q.ifPart || q.thenPart || q.becausePart ? `If we ${q.ifPart || '__________'}, then the robot will ${q.thenPart || '__________'} because ${q.becausePart || '__________'}.` : '';
-  const fields = [['observation', '1. We observed that…'], ['problem', '2. We think the main problem is…'], ['cause', '3. Possible cause…'], ['idea1', '4. Idea 1…'], ['idea2', '5. Idea 2…'], ['selected', '6. Selected idea…'], ['expected', '7. Expected evidence…']];
-  return (
-    <><SectionTitle eyebrow="Stage 3 · Rapid inquiry · 20 minutes" title="Turn one observation into a testable idea" intro="Observation → Problem → Hypothesis → Design Idea → Expected Evidence" action={<Timer minutes={20} label="Inquiry timer" compact />} />
-      <div className="inquiry-path" aria-hidden="true">{['Observe', 'Define', 'Hypothesize', 'Design', 'Predict evidence'].map((item, index) => <span key={item}><i>{index + 1}</i>{item}</span>)}</div>
-      <div className="form-grid two">{fields.map(([key, label]) => <TextArea key={key} label={label} rows={2} value={q[key]} onChange={(value) => update(['inquiry', key], value)} />)}</div>
-      <section className="hypothesis-builder"><div><span className="eyebrow">Hypothesis builder</span><h2>If → then → because</h2><p>A strong hypothesis predicts what will change and explains why.</p></div><div className="hypothesis-fields"><Field label="If we…" value={q.ifPart} onChange={(value) => update('inquiry.ifPart', value)} /><Field label="Then the robot will…" value={q.thenPart} onChange={(value) => update('inquiry.thenPart', value)} /><Field label="Because…" value={q.becausePart} onChange={(value) => update('inquiry.becausePart', value)} /></div>{sentence && <blockquote>{sentence}</blockquote>}</section>
-      <button className="button" onClick={() => goTo('plan')}>Continue to design plan →</button>
-    </>
-  );
-}
-
-function DesignPlanPage({ project, update }) {
-  const types = [['Attachment', 'Guide, grip or hold objects more effectively.'], ['Claw adjustment', 'Change contact, angle or stability.'], ['Driving strategy', 'Optimize route, approach and action sequence.'], ['Simple control change', 'Adjust speed or add basic assistance.']];
-  const safety = ['Robot is powered off while building.', 'Attachment is secure and removable.', 'No sharp or unsafe protrusions.', 'The field is clear before testing.'];
-  const checks = ['Can we build it safely?', 'Can we test it fairly?', 'Can we explain why it should work?', 'Does it directly address our hypothesis?'];
-  const upload = (event) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    if (file.size > 1_500_000) { window.alert('Choose an image smaller than 1.5 MB so local saving remains reliable.'); return; }
-    const reader = new FileReader(); reader.onload = () => update('designPlan.sketch', reader.result); reader.readAsDataURL(file);
-  };
-  return (
-    <><SectionTitle eyebrow="Design plan" title="Plan one focused improvement" intro="Choose the smallest change that directly tests your hypothesis." />
-      <fieldset className="choice-grid"><legend>Improvement type</legend>{types.map(([name, description]) => <label className={project.designPlan.type === name ? 'choice selected' : 'choice'} key={name}><input type="radio" name="design-type" value={name} checked={project.designPlan.type === name} onChange={() => update('designPlan.type', name)} /><strong>{name}</strong><span>{description}</span></label>)}</fieldset>
-      <div className="form-grid two"><TextArea label="Describe your solution" value={project.designPlan.description} onChange={(value) => update('designPlan.description', value)} placeholder="What will you add, adjust or do differently?" /><TextArea label="Parts and materials needed" value={project.designPlan.parts} onChange={(value) => update('designPlan.parts', value)} placeholder="List only supplied parts and materials." /></div>
-      <section className="sketch-uploader"><div><span className="eyebrow">Annotated sketch</span><h2>Add a photo of your plan</h2><p>Use arrows or labels on paper first, then photograph the sketch.</p><label className="button button-light">Choose image<input type="file" accept="image/*" onChange={upload} /></label>{project.designPlan.sketch && <button className="button button-quiet" onClick={() => update('designPlan.sketch', '')}>Remove image</button>}</div>{project.designPlan.sketch ? <img src={project.designPlan.sketch} alt="Team’s uploaded annotated design sketch" /> : <div className="sketch-placeholder" aria-label="No sketch uploaded"><span>＋</span>No sketch uploaded</div>}</section>
-      <div className="split-layout"><section><h2>Safety before testing</h2><div className="check-stack">{safety.map((item, index) => <Checkbox key={item} checked={project.designPlan.safety[index]} onChange={(value) => update(['designPlan', 'safety', index], value)}>{item}</Checkbox>)}</div></section><section><h2>Design check</h2><div className="check-stack">{checks.map((item, index) => <Checkbox key={item} checked={project.designPlan.checks[index]} onChange={(value) => update(['designPlan', 'checks', index], value)}>{item}</Checkbox>)}</div></section></div>
-    </>
-  );
-}
-
-function BuildPage({ project, update }) {
-  const checkpoints = [['20 min', 'Pause: compare the build with the sketch.'], ['35 min', 'Check: secure every attachment and protect moving parts.'], ['40 min', 'Prepare: stop adding features and get ready to test.']];
-  return (
-    <><SectionTitle eyebrow="Stage 4 · Prototype · 45 minutes" title="Build one change that answers your hypothesis" intro="Keep the robot safe, removable and testable. Record what actually changes during the build." action={<Timer minutes={45} label="Build timer" compact />} />
-      <Callout tone="yellow" label="Build principle">One major improvement is enough. A focused prototype produces clearer evidence.</Callout>
-      <div className="form-grid two"><TextArea label="What did we change?" value={project.build.changed} onChange={(value) => update('build.changed', value)} /><TextArea label="What problem does it address?" value={project.build.addresses} onChange={(value) => update('build.addresses', value)} /><TextArea label="What result do we predict?" value={project.build.predict} onChange={(value) => update('build.predict', value)} /><TextArea label="Issues encountered during building" value={project.build.issues} onChange={(value) => update('build.issues', value)} /></div>
-      <section><span className="eyebrow">Quiet checkpoints</span><h2>Use these prompts when your team reaches them</h2><div className="checkpoint-list">{checkpoints.map(([time, text], index) => <Checkbox key={time} checked={project.build.checkpoints[index]} onChange={(value) => update(['build', 'checkpoints', index], value)}><strong>{time}</strong> — {text}</Checkbox>)}</div></section>
-    </>
-  );
-}
-
-function TestingPage({ project, update }) {
-  const [metric, setMetric] = useState('delivered');
-  return (
-    <><SectionTitle eyebrow="Stage 5 · Testing · 25 + 15 minutes" title="Turn your prototype into evidence" intro="Use the same driver, start position and 60-second limit for every controlled trial." action={<Timer minutes={1} label="Robot run" compact />} />
-      <div className="table-wrap"><table className="data-table"><caption>Testing data — edit each cell directly</caption><thead><tr><th>Test</th><th>Objects delivered</th><th>Correct placements</th><th>Drops / errors</th><th>Time (s)</th><th>Notes</th></tr></thead><tbody>{project.tests.map((row, rowIndex) => <tr key={row.name}><th scope="row">{row.name}</th>{['delivered', 'correct', 'drops', 'time'].map((key) => <td key={key}><input aria-label={`${row.name} ${testMetrics.find(([id]) => id === key)?.[1]}`} type="number" min="0" max={key === 'time' ? 60 : undefined} value={row[key]} onChange={(event) => update(['tests', rowIndex, key], event.target.value)} /></td>)}<td><input aria-label={`${row.name} notes`} value={row.notes} onChange={(event) => update(['tests', rowIndex, 'notes'], event.target.value)} /></td></tr>)}</tbody></table></div>
-      <PerformanceChart tests={project.tests} metric={metric} setMetric={setMetric} />
-      <Callout label="Fair-test check">Change one variable at a time. Record the result immediately after every run.</Callout>
-    </>
-  );
-}
-
-function AnalysisPage({ project, update }) {
-  const fields = [['improved', 'What improved most?'], ['consistent', 'Was the result consistent?'], ['supports', 'Does the evidence support your hypothesis?'], ['limitation', 'What limitation still remains?'], ['finalChange', 'What will you change before the Final Test?'], ['why', 'Why did you choose this change?']];
-  return (
-    <><SectionTitle eyebrow="Analyze → decide → retest" title="Make one final evidence-based improvement" intro="Compare patterns across trials before touching the robot again." />
-      <Callout tone="yellow" label="Decision rule">Change only what your evidence tells you to change.</Callout>
-      <div className="analysis-grid">{fields.map(([key, label], index) => <div key={key}><span>0{index + 1}</span><TextArea label={label} value={project.analysis[key]} onChange={(value) => update(['analysis', key], value)} /></div>)}</div>
-    </>
-  );
-}
-
-function PresentationOverlay({ project, onClose }) {
-  const priority = priorities.find((item) => item.id === project.priority);
-  const sections = [['01', 'Our Challenge', project.presentation.challenge], ['02', 'Our Observation', project.presentation.observation], ['03', 'Our Hypothesis', project.presentation.hypothesis], ['04', 'Our Solution', project.presentation.solution], ['05', 'Our Evidence', project.presentation.evidence], ['06', 'Limitations & Next Improvement', project.presentation.limitations]];
-  return (
-    <div className="presentation-overlay" role="dialog" aria-modal="true" aria-label="Presentation view"><button className="presentation-close" onClick={onClose}>Close presentation ×</button><header><span>{project.team.name || 'Our Team'} · {priority?.title || 'VEX Rapid Innovation'}</span><h1>Our evidence-based design story</h1></header><div className="presentation-sections">{sections.map(([number, title, body]) => <section key={title}><span>{number}</span><h2>{title}</h2><p>{body || 'Add this section in the Presentation Builder.'}</p></section>)}</div><footer>3-minute pitch · 1-minute questions · Every member speaks</footer></div>
-  );
-}
-
-function PresentationPage({ project, update }) {
-  const [presenting, setPresenting] = useState(false);
-  const sections = [['challenge', '1. Our Challenge'], ['observation', '2. Our Observation'], ['hypothesis', '3. Our Hypothesis'], ['solution', '4. Our Solution'], ['evidence', '5. Our Evidence'], ['limitations', '6. Limitations and Next Improvement']];
-  const questions = ['What evidence shows that your solution improved the robot?', 'What was the most important design decision?', 'What trade-off did your team make?', 'How reliable was your solution?', 'What would you improve if you had another hour?'];
-  return (
-    <><SectionTitle eyebrow="Stage 6 · Presentation builder" title="Tell the story of your design in three minutes" intro="Choose only the strongest evidence. Every member must speak during at least one part." action={<button className="button" onClick={() => setPresenting(true)}>Open Presentation View</button>} />
-      <div className="presentation-builder">{sections.map(([key, label]) => <TextArea key={key} label={label} rows={3} value={project.presentation[key]} onChange={(value) => update(['presentation', key], value)} placeholder="Write one or two short points." />)}</div>
-      <div className="presentation-rules"><div><strong>3 min</strong><span>Pitch + live demonstration</span></div><div><strong>1 min</strong><span>Questions and defense</span></div><div><strong>4 voices</strong><span>Every team member participates</span></div></div>
-      <Checkbox checked={project.presentation.participation} onChange={(value) => update('presentation.participation', value)}>Every member has an assigned speaking or demonstration part.</Checkbox>
-      <section className="question-bank"><span className="eyebrow">Defense practice</span><h2>Be ready for these questions</h2><ol>{questions.map((question) => <li key={question}>{question}</li>)}</ol></section>
-      {presenting && <PresentationOverlay project={project} onClose={() => setPresenting(false)} />}
-    </>
-  );
-}
-
-function RubricPage({ project, update }) {
-  const rated = rubricCriteria.filter(([id]) => project.rubric[id].score).length;
-  return (
-    <><SectionTitle eyebrow="Readiness self-check" title="Robot performance is only one part of the story" intro="Rate your current evidence from 1–4. This helps your team prepare; it is not an official teacher score." />
-      <div className="rubric-summary"><strong>{rated} / 6</strong><span>criteria reviewed</span></div>
-      <div className="rubric-list">{rubricCriteria.map(([id, title, weight, expected]) => <section className="rubric-row" key={id}><div><span className="weight">{weight}%</span><h2>{title}</h2><p>{expected}</p></div><fieldset><legend>Self-rating</legend>{[1, 2, 3, 4].map((score) => <label key={score}><input type="radio" name={`rubric-${id}`} value={score} checked={Number(project.rubric[id].score) === score} onChange={() => update(['rubric', id, 'score'], score)} /><span>{score}</span></label>)}</fieldset><TextArea label="Evidence notes" rows={2} value={project.rubric[id].evidence} onChange={(value) => update(['rubric', id, 'evidence'], value)} placeholder="What proves this rating?" /></section>)}</div>
-      <Callout tone="yellow" label="Important">Use this rubric to find missing evidence—not to calculate a final competition score.</Callout>
-    </>
-  );
-}
-
-function ReflectionPage({ project, update }) {
-  return (
-    <><SectionTitle eyebrow="Final reflection · 3 minutes" title="Use evidence to make the next version better" intro="Pause after the demonstration. Capture one learning, one contribution and one next step." action={<Timer minutes={3} label="Reflection timer" compact />} />
-      <div className="reflection-grid"><TextArea label="One thing I learned…" rows={5} value={project.reflection.learned} onChange={(value) => update('reflection.learned', value)} /><TextArea label="One contribution I made…" rows={5} value={project.reflection.contribution} onChange={(value) => update('reflection.contribution', value)} /><TextArea label="One improvement I would make…" rows={5} value={project.reflection.improvement} onChange={(value) => update('reflection.improvement', value)} /></div>
-      <blockquote className="closing-quote">Good engineering is not just making a robot work. <strong>It is using evidence to make the next version better.</strong></blockquote>
-    </>
-  );
-}
-
-function SummaryPage({ project, update, exportCsv }) {
-  const [metric, setMetric] = useState('delivered');
-  const priority = priorities.find((item) => item.id === project.priority);
-  const hypothesis = project.inquiry.ifPart || project.inquiry.thenPart || project.inquiry.becausePart ? `If we ${project.inquiry.ifPart || '—'}, then the robot will ${project.inquiry.thenPart || '—'} because ${project.inquiry.becausePart || '—'}.` : '—';
-  return (
-    <div className="summary-page"><SectionTitle eyebrow="Team project summary" title={project.team.name || 'Untitled team project'} intro="Review the complete evidence story, check final products, then print or save as PDF." action={<div className="summary-actions"><button className="button" onClick={() => window.print()}>Print / Save PDF</button><button className="button button-light" onClick={exportCsv}>Export testing CSV</button></div>} />
-      <section className="summary-hero"><div><span>Design priority</span><strong>{priority?.title || 'Not selected'}</strong><p>{priority?.mission}</p></div><div><span>Schools</span><strong>{project.team.schools || '—'}</strong></div><div><span>Members</span><strong>{project.team.members.filter((member) => member.name).map((member) => member.name).join(', ') || '—'}</strong></div></section>
-      <div className="summary-grid"><section><span className="eyebrow">Baseline observation</span><p>{project.baseline.difficulties || project.inquiry.observation || '—'}</p></section><section><span className="eyebrow">Problem</span><p>{project.inquiry.problem || '—'}</p></section><section className="wide"><span className="eyebrow">Hypothesis</span><p>{hypothesis}</p></section><section><span className="eyebrow">Solution</span><p>{project.designPlan.description || project.build.changed || '—'}</p></section><section><span className="eyebrow">Limitation</span><p>{project.analysis.limitation || '—'}</p></section><section className="wide"><span className="eyebrow">Next improvement</span><p>{project.analysis.finalChange || project.reflection.improvement || '—'}</p></section></div>
-      {project.designPlan.sketch && <section className="summary-sketch"><span className="eyebrow">Annotated sketch</span><img src={project.designPlan.sketch} alt="Team’s annotated design sketch" /></section>}
-      <div className="table-wrap"><table className="data-table summary-table"><caption>Testing evidence</caption><thead><tr><th>Test</th><th>Delivered</th><th>Correct</th><th>Drops / errors</th><th>Time</th><th>Notes</th></tr></thead><tbody>{project.tests.map((row) => <tr key={row.name}><th>{row.name}</th><td>{row.delivered || '—'}</td><td>{row.correct || '—'}</td><td>{row.drops || '—'}</td><td>{row.time || '—'}</td><td>{row.notes || '—'}</td></tr>)}</tbody></table></div>
-      <PerformanceChart tests={project.tests} metric={metric} setMetric={setMetric} />
-      <section><span className="eyebrow">Final product checklist</span><h2>What your team must produce</h2><div className="final-checklist">{finalProducts.map((item, index) => <Checkbox key={item} checked={project.finalChecklist[index]} onChange={(value) => update(['finalChecklist', index], value)}>{item}</Checkbox>)}</div></section>
-      <section className="summary-reflection"><span className="eyebrow">Reflection</span><div><p><strong>Learned:</strong> {project.reflection.learned || '—'}</p><p><strong>Contribution:</strong> {project.reflection.contribution || '—'}</p><p><strong>Would improve:</strong> {project.reflection.improvement || '—'}</p></div></section>
+    <div className="timer-controls">
+      {timer.status === 'idle' && <button className="control-start" type="button" onClick={timer.start}>{startLabel}</button>}
+      {timer.status === 'running' && <button className="control-pause" type="button" onClick={timer.pause}>Pause</button>}
+      {timer.status === 'paused' && <button className="control-start" type="button" onClick={timer.start}>Resume</button>}
+      {timer.status === 'ended' && <span className="ended-label">Time ended</span>}
+      <button className="control-reset" type="button" onClick={onReset}>Reset</button>
     </div>
   );
 }
 
-function HelpPage() {
+function BuildPractice({ project, update, practiceTimer, setPracticeMode, onPracticeReset, goTo }) {
+  const current = project.practice.mode === 240_000 ? practiceTimer.currentDriver : project.practice.driverIndex;
+  const currentName = project.team.members[current] || `Driver ${current + 1}`;
   return (
-    <><SectionTitle eyebrow="Help & glossary" title="Quick support while you work" intro="Use these definitions and troubleshooting prompts without leaving your current project." />
-      <div className="help-grid"><section><h2>If your team is stuck…</h2><ol className="steps"><li><strong>Return to the evidence.</strong><span>Which baseline or trial result is weakest?</span></li><li><strong>Name one problem.</strong><span>A specific problem leads to a testable change.</span></li><li><strong>Change one variable.</strong><span>Keep the driver, start and time limit consistent.</span></li><li><strong>Ask every voice.</strong><span>Invite each member to explain what they notice.</span></li></ol></section><section><h2>Glossary</h2><dl className="glossary">{glossary.map(([term, definition]) => <div key={term}><dt>{term}</dt><dd>{definition}</dd></div>)}</dl></section></div>
-      <Callout tone="yellow" label="Local storage">Work is saved only in this browser on this device. Use Export Project before changing devices or clearing browser data.</Callout>
-    </>
+    <main id="main-content" className="build-page page-shell">
+      <header className="page-lead compact-lead">
+        <span className="step-tag">02 · Build & Practice</span>
+        <h1>Change one thing. Test it fast.</h1>
+        <p>Keep the robot working. Improve only the problem that matters most.</p>
+      </header>
+
+      <section className="build-flow" aria-label="Build and practice steps">
+        {BUILD_STEPS.map((step, index) => <div key={step}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step}</strong>{index < BUILD_STEPS.length - 1 && <i aria-hidden="true">→</i>}</div>)}
+      </section>
+
+      <section className="build-workspace">
+        <div className="quick-notes">
+          <span className="eyebrow">Optional team notes</span>
+          {[
+            ['problem', 'Our main problem', 'What slows the robot down?'],
+            ['improvement', 'Our improvement', 'What did you change?'],
+            ['practiceResult', 'What improved after practice', 'What now works better?'],
+          ].map(([key, label, placeholder]) => (
+            <label className="short-note" key={key}><span>{label}<small>{project.notes[key].length}/200</small></span><textarea rows="2" maxLength="200" value={project.notes[key]} placeholder={placeholder} onChange={(event) => update(['notes', key], event.target.value)} /></label>
+          ))}
+        </div>
+
+        <section className="practice-console" aria-labelledby="practice-title">
+          <div className="console-heading"><div><span className="eyebrow">Practice timer</span><h2 id="practice-title">Give every driver a turn</h2></div><div className="mode-switch" aria-label="Practice timer mode"><button type="button" className={project.practice.mode === 60_000 ? 'active' : ''} onClick={() => setPracticeMode(60_000)}>1 min</button><button type="button" className={project.practice.mode === 240_000 ? 'active' : ''} onClick={() => setPracticeMode(240_000)}>4 min</button></div></div>
+          {project.practice.mode === 60_000 && (
+            <label className="driver-select">Practice driver<select value={project.practice.driverIndex} disabled={practiceTimer.status === 'running'} onChange={(event) => update('practice.driverIndex', Number(event.target.value))}>{project.team.members.map((name, index) => <option key={`driver-option-${index}`} value={index}>{name || `Driver ${index + 1}`}</option>)}</select></label>
+          )}
+          <div className={`practice-clock timer-status-${practiceTimer.status}`}><span>{currentName}</span><strong>{practiceTimer.display}</strong></div>
+          <TimerControls timer={practiceTimer} onReset={onPracticeReset} startLabel="Start Practice" />
+          <div className="driver-checklist">
+            {project.practice.checklist.map((checked, index) => (
+              <label key={`practice-check-${index}`} className={checked ? 'checked' : ''}><input type="checkbox" checked={checked} onChange={(event) => update(['practice', 'checklist', index], event.target.checked)} /><span>{checked ? '✓' : index + 1}</span><strong>{project.team.members[index] || `Driver ${index + 1}`}<small>practiced</small></strong></label>
+            ))}
+          </div>
+        </section>
+      </section>
+
+      <div className="page-action-row"><span className="complete-note">{project.practice.checklist.filter(Boolean).length}/4 drivers practiced</span><button type="button" className="primary-action" onClick={() => goTo('match')}>Ready to Compete <span aria-hidden="true">→</span></button></div>
+    </main>
   );
 }
 
-function App() {
-  const { project, update, replaceProject, resetProject, saveState } = useProject();
-  const [showLanding, setShowLanding] = useState(true);
-  const page = project.currentPage || 'dashboard';
-
-  useEffect(() => {
-    if (!pageOrder.includes(page) && page !== 'help') update('currentPage', 'dashboard');
-  }, []);
-
-  const goTo = (id) => {
-    update('currentPage', id);
-    window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-    window.setTimeout(() => document.getElementById('main-content')?.focus(), 0);
-  };
-  const start = () => { update('started', true); update('currentPage', 'dashboard'); setShowLanding(false); };
-  const exportProject = () => downloadFile(`${safeName(project.team.name)}.json`, JSON.stringify({ ...project, exportedAt: new Date().toISOString() }, null, 2), 'application/json');
-  const exportCsv = () => {
-    const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-    const rows = [['Test', 'Objects delivered', 'Correct placements', 'Drops/errors', 'Completion time', 'Notes'], ...project.tests.map((row) => [row.name, row.delivered, row.correct, row.drops, row.time, row.notes])];
-    downloadFile(`${safeName(project.team.name)}-testing.csv`, rows.map((row) => row.map(escape).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
-  };
-  const importProject = (event) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    const reader = new FileReader(); reader.onload = () => { try { const value = JSON.parse(reader.result); if (!value || typeof value !== 'object' || !Array.isArray(value.tests)) throw new Error(); replaceProject(value); setShowLanding(false); window.alert('Project imported successfully.'); } catch { window.alert('This file is not a valid VEX project export.'); } event.target.value = ''; }; reader.readAsText(file);
-  };
-  const reset = () => { if (window.confirm('Reset this project? All locally saved answers, images and progress on this device will be deleted. Export first if you may need them later.')) { resetProject(); setShowLanding(true); } };
-
-  const pageView = useMemo(() => {
-    const props = { project, update, goTo };
-    return {
-      dashboard: <DashboardPage {...props} />, brief: <BriefPage />, goals: <GoalsPage />, team: <TeamPage {...props} />,
-      priority: <PriorityPage {...props} />, constraints: <ConstraintsPage {...props} />, baseline: <BaselinePage {...props} />,
-      inquiry: <InquiryPage {...props} />, plan: <DesignPlanPage {...props} />, build: <BuildPage {...props} />,
-      testing: <TestingPage {...props} />, analysis: <AnalysisPage {...props} />, presentation: <PresentationPage {...props} />,
-      rubric: <RubricPage {...props} />, reflection: <ReflectionPage {...props} />,
-      summary: <SummaryPage {...props} exportCsv={exportCsv} />, help: <HelpPage />,
-    }[page] || <DashboardPage {...props} />;
-  }, [page, project]);
-
-  if (showLanding) return <Landing hasSession={project.started} onStart={start} onContinue={() => setShowLanding(false)} />;
-  return <AppShell project={project} page={page} goTo={goTo} saveState={saveState} onExport={exportProject} onImport={importProject} onReset={reset}>{pageView}</AppShell>;
+function ScoreCounter({ label, imageClass, count, points, disabled, change }) {
+  return (
+    <section className={`score-counter ${imageClass}`} aria-label={`${label}: ${count}, ${points} points`}>
+      <div><span>{label}</span><strong>{count}</strong><small>{points} points</small></div>
+      <div className="counter-buttons">
+        <button type="button" aria-label={`Remove one ${label}`} disabled={disabled || count === 0} onClick={() => change(-1)}>−</button>
+        <button type="button" aria-label={`Add one ${label}`} disabled={disabled} onClick={() => change(1)}>+</button>
+      </div>
+    </section>
+  );
 }
 
-export default App;
+function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchReset, onScoreReset, onSave, onSignal, goTo }) {
+  const matchArea = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+  const cups = project.match.cups;
+  const pins = project.match.pins;
+  const { totalScore: total } = calculateScore(cups, pins);
+  const scoringLocked = project.match.timer.status === 'ended' && project.match.lockScoringAtEnd && !project.match.scoringUnlocked;
+  const currentName = project.team.members[matchTimer.currentDriver] || `Driver ${matchTimer.currentDriver + 1}`;
+
+  useEffect(() => {
+    const track = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', track);
+    return () => document.removeEventListener('fullscreenchange', track);
+  }, []);
+
+  const changeScore = (key, delta) => {
+    if (scoringLocked) return;
+    update(['match', key], (value) => Math.max(0, Number(value || 0) + delta));
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await matchArea.current?.requestFullscreen();
+    } catch {
+      window.alert('Full-screen mode is not available in this browser.');
+    }
+  };
+
+  return (
+    <main id="main-content" className="match-page">
+      <section ref={matchArea} className={`match-console ${alert ? `has-${alert.type}-alert` : ''}`}>
+        {alert && <div className={`match-alert alert-${alert.type}`} role="alert"><strong>{alert.message}</strong>{alert.detail && <span>{alert.detail}</span>}</div>}
+        <header className="match-topbar">
+          <div className="match-identity">
+            <label><span>Team</span><input value={project.team.name} placeholder="Team name" onChange={(event) => update('team.name', event.target.value)} /></label>
+            <label><span>Run</span><select value={project.match.type} onChange={(event) => update('match.type', event.target.value)}>{MATCH_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>
+          </div>
+          <div className="match-tools">
+            <button type="button" aria-pressed={project.match.soundEnabled} onClick={() => update('match.soundEnabled', (value) => !value)}>{project.match.soundEnabled ? 'Sound on' : 'Sound off'}</button>
+            <button type="button" onClick={toggleFullscreen}>{isFullscreen ? 'Exit full screen' : 'Full screen'}</button>
+            <button type="button" onClick={() => goTo('mission')}>Field map</button>
+          </div>
+        </header>
+
+        <div className="driver-stages" aria-label="Driver rotation">
+          {DRIVER_PHASES.map(([driver, time], index) => (
+            <div key={driver} className={`${index === matchTimer.currentDriver ? 'current' : ''} ${index < matchTimer.currentDriver ? 'complete' : ''}`}><span>{index < matchTimer.currentDriver ? '✓' : `0${index + 1}`}</span><strong>{project.team.members[index] || driver}</strong><small>{time}</small></div>
+          ))}
+        </div>
+
+        <div className="match-main-grid">
+          <section className="match-timer" aria-live="polite" aria-label={`Match timer ${matchTimer.display}, current ${currentName}`}>
+            <span className="current-driver-label">Now driving</span>
+            <h2>{currentName}</h2>
+            <strong className="giant-time">{matchTimer.display}</strong>
+            <TimerControls timer={matchTimer} onReset={onMatchReset} />
+          </section>
+
+          <section className="score-console" aria-labelledby="score-title">
+            <div className="score-heading"><div><span className="eyebrow">Live scoring</span><h2 id="score-title">Team score</h2></div><button type="button" className="reset-score" onClick={onScoreReset}>Reset score</button></div>
+            <div className="score-counters">
+              <ScoreCounter label="Cups" imageClass="cups" count={cups} points={cups * 5} disabled={scoringLocked} change={(delta) => changeScore('cups', delta)} />
+              <ScoreCounter label="Pins" imageClass="pins" count={pins} points={pins * 10} disabled={scoringLocked} change={(delta) => changeScore('pins', delta)} />
+            </div>
+            <div className="total-score"><span>Total score</span><strong>{total}</strong><small>{cups} × 5 + {pins} × 10</small></div>
+            <label className="lock-option"><input type="checkbox" checked={project.match.lockScoringAtEnd} onChange={(event) => update('match.lockScoringAtEnd', event.target.checked)} /><span>Lock scoring at end</span></label>
+            {scoringLocked && <button type="button" className="unlock-score" onClick={() => update('match.scoringUnlocked', true)}>Unlock to correct score</button>}
+          </section>
+        </div>
+
+        <footer className="match-footer">
+          <span className="mission-reminder"><b>Mission:</b> Supply Zone → Your Delivery Zone</span>
+          <button type="button" className="end-save" onClick={onSave}>End and Save Match</button>
+        </footer>
+      </section>
+    </main>
+  );
+}
+
+function Results({ project, saveCurrent, startNew, clearResults }) {
+  const [showLeaderboard, setShowLeaderboard] = useState(true);
+  const sorted = useMemo(() => [...project.results].sort((a, b) => b.totalScore - a.totalScore), [project.results]);
+  const latest = project.results[0];
+
+  const rankFor = (score) => sorted.findIndex((result) => result.totalScore === score) + 1;
+  const exportCsv = () => {
+    if (!project.results.length) return;
+    const headings = ['Rank', 'Team', 'Match type', 'Match number', 'Cups', 'Cup points', 'Pins', 'Pin points', 'Total score', 'Driver participation', 'Improvement used', 'Date/time'];
+    const rows = sorted.map((result) => [rankFor(result.totalScore), result.teamName, result.matchType, result.matchNumber, result.cups, result.cupPoints, result.pins, result.pinPoints, result.totalScore, `${result.driverParticipation}/4`, result.improvement, new Date(result.createdAt).toLocaleString()]);
+    const csv = [headings, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+    downloadText('vex-challenge-results.csv', `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+  };
+
+  return (
+    <main id="main-content" className="results-page page-shell">
+      <header className="page-lead compact-lead results-lead">
+        <div><span className="step-tag">04 · Results</span><h1>Results Board</h1><p>Every saved run stays on this device.</p></div>
+        <div className="result-actions"><button type="button" onClick={saveCurrent}>Save Result</button><button type="button" onClick={() => window.print()}>Print Result</button><button type="button" onClick={exportCsv} disabled={!project.results.length}>Export CSV</button></div>
+      </header>
+
+      {latest ? (
+        <section className="latest-result" aria-labelledby="latest-title">
+          <div><span className="eyebrow">Latest saved run</span><h2 id="latest-title">{latest.teamName}</h2><p>{latest.matchType} · Run {latest.matchNumber} · {new Date(latest.createdAt).toLocaleString()}</p><p><b>Improvement:</b> {latest.improvement || 'No note recorded'}</p></div>
+          <div className="result-breakdown"><span>{latest.cups} Cups <b>{latest.cupPoints}</b></span><span>{latest.pins} Pins <b>{latest.pinPoints}</b></span><span>Drivers <b>{latest.driverParticipation}/4</b></span></div>
+          <div className="latest-total"><span>Total</span><strong>{latest.totalScore}</strong></div>
+        </section>
+      ) : (
+        <section className="empty-results"><Icon>🏁</Icon><h2>No saved matches yet</h2><p>Run the Match Timer, record Cups and Pins, then save the result.</p><button className="primary-action" type="button" onClick={startNew}>Start First Match</button></section>
+      )}
+
+      {project.results.length > 0 && (
+        <>
+          <section className="leaderboard-section">
+            <div className="results-heading"><div><span className="eyebrow">Optional ranking</span><h2>Leaderboard</h2></div><button type="button" onClick={() => setShowLeaderboard((show) => !show)}>{showLeaderboard ? 'Hide leaderboard' : 'Show leaderboard'}</button></div>
+            {showLeaderboard && <ol className="leaderboard">{sorted.map((result) => <li key={result.id}><span className="rank">#{rankFor(result.totalScore)}</span><strong>{result.teamName}</strong><small>{result.matchType}</small><b>{result.totalScore} pts</b></li>)}</ol>}
+          </section>
+
+          <section className="history-section" aria-labelledby="history-title">
+            <div className="results-heading"><div><span className="eyebrow">Saved on this device</span><h2 id="history-title">Match history</h2></div><span>{project.results.length} result{project.results.length === 1 ? '' : 's'}</span></div>
+            <div className="table-scroll"><table><thead><tr><th>Team / run</th><th>Cups</th><th>Pins</th><th>Drivers</th><th>Improvement</th><th>Total</th><th>Time</th></tr></thead><tbody>{project.results.map((result) => <tr key={result.id}><td><strong>{result.teamName}</strong><small>{result.matchType} · #{result.matchNumber}</small></td><td>{result.cups}<small>{result.cupPoints} pts</small></td><td>{result.pins}<small>{result.pinPoints} pts</small></td><td>{result.driverParticipation}/4</td><td>{result.improvement || '—'}</td><td className="table-total">{result.totalScore}</td><td>{new Date(result.createdAt).toLocaleString()}</td></tr>)}</tbody></table></div>
+          </section>
+        </>
+      )}
+
+      <div className="results-bottom-actions"><button type="button" className="primary-action" onClick={startNew}>Start New Match</button><button type="button" className="danger-quiet" disabled={!project.results.length} onClick={clearResults}>Clear Results</button></div>
+    </main>
+  );
+}
+
+export default function App() {
+  const { project, setProject, update, saveState } = useProject();
+  const [fieldOpen, setFieldOpen] = useState(false);
+  const [alert, setAlert] = useState(null);
+  const alertTimeout = useRef(null);
+  const audioContext = useRef(null);
+
+  const goTo = useCallback((view) => {
+    update('currentView', view);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [update]);
+
+  const setMatchTimer = useCallback((value) => update('match.timer', value), [update]);
+  const setPracticeTimer = useCallback((value) => update('practice.timer', value), [update]);
+
+  const playSignal = useCallback((kind = 'change') => {
+    if (!project.match.soundEnabled) return;
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      audioContext.current ||= new AudioContextClass();
+      const context = audioContext.current;
+      const tone = (frequency, start, length) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'square';
+        gain.gain.setValueAtTime(0.0001, context.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + start + length);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(context.currentTime + start);
+        oscillator.stop(context.currentTime + start + length + 0.02);
+      };
+      if (kind === 'end') { tone(520, 0, 0.2); tone(390, 0.28, 0.42); }
+      else tone(740, 0, 0.18);
+    } catch {
+      // Sound is optional; visual alerts remain available.
+    }
+  }, [project.match.soundEnabled]);
+
+  const showAlert = useCallback((type, message, detail, duration = 3200) => {
+    window.clearTimeout(alertTimeout.current);
+    setAlert({ type, message, detail, id: Date.now() });
+    alertTimeout.current = window.setTimeout(() => setAlert(null), duration);
+  }, []);
+
+  useEffect(() => () => {
+    window.clearTimeout(alertTimeout.current);
+    audioContext.current?.close?.();
+  }, []);
+
+  const markDriverSeen = useCallback((index) => {
+    update(['match', 'driverSeen', index], true);
+  }, [update]);
+
+  const matchTimer = useTimestampTimer(project.match.timer, setMatchTimer, {
+    onDriverChange: (nextDriver) => {
+      markDriverSeen(nextDriver);
+      playSignal('change');
+      showAlert('change', 'CHANGE DRIVER!', project.team.members[nextDriver] || `Driver ${nextDriver + 1}`);
+    },
+    onEnd: () => {
+      markDriverSeen(3);
+      playSignal('end');
+      showAlert('end', 'MATCH ENDED', 'Stop the robot and confirm the score.', 5000);
+    },
+  });
+
+  const practiceResolveDriver = useCallback((remaining, duration) => (
+    duration === 240_000 ? driverFromRemaining(remaining) : project.practice.driverIndex
+  ), [project.practice.driverIndex]);
+
+  const practiceTimer = useTimestampTimer(project.practice.timer, setPracticeTimer, {
+    resolveDriver: practiceResolveDriver,
+    onDriverChange: (nextDriver, previousDriver) => {
+      update(['practice', 'checklist', previousDriver], true);
+      playSignal('change');
+      showAlert('change', 'CHANGE DRIVER!', project.team.members[nextDriver] || `Driver ${nextDriver + 1}`);
+    },
+    onEnd: () => {
+      if (project.practice.mode === 240_000) update('practice.checklist', [true, true, true, true]);
+      else update(['practice', 'checklist', project.practice.driverIndex], true);
+      playSignal('end');
+      showAlert('practice', 'PRACTICE ENDED', 'Check the robot, then choose the next driver.');
+    },
+  });
+
+  const { totalScore } = calculateScore(project.match.cups, project.match.pins);
+
+  const onMatchStart = () => {
+    markDriverSeen(matchTimer.currentDriver);
+    playSignal('change');
+    matchTimer.start();
+  };
+
+  const resetMatchTimer = () => {
+    if (!window.confirm('Reset the 4-minute match timer? The score will stay unchanged.')) return;
+    matchTimer.reset();
+    update('match.driverSeen', [false, false, false, false]);
+    update('match.scoringUnlocked', false);
+    setAlert(null);
+  };
+
+  const resetScore = () => {
+    if (!window.confirm('Reset Cups, Pins and Total Score to 0?')) return;
+    update('match.cups', 0);
+    update('match.pins', 0);
+  };
+
+  const setPracticeMode = (durationMs) => {
+    if (project.practice.timer.status === 'running' && !window.confirm('Change practice mode and reset the current practice timer?')) return;
+    update('practice.mode', durationMs);
+    update('practice.timer', createTimer(durationMs));
+  };
+
+  const resetPractice = () => {
+    if (!window.confirm('Reset this practice timer?')) return;
+    practiceTimer.reset();
+    setAlert(null);
+  };
+
+  const saveCurrentResult = useCallback((navigate = true) => {
+    setProject((current) => {
+      const existingIndex = current.results.findIndex((result) => result.sessionId === current.match.sessionId);
+      const existing = current.results[existingIndex];
+      const teamResults = current.results.filter((result) => result.teamName === (current.team.name.trim() || 'Unnamed Team'));
+      const seen = current.match.driverSeen;
+      const score = calculateScore(current.match.cups, current.match.pins);
+      const result = {
+        id: existing?.id || makeId(),
+        sessionId: current.match.sessionId,
+        teamName: current.team.name.trim() || 'Unnamed Team',
+        matchType: current.match.type,
+        matchNumber: existing?.matchNumber || teamResults.length + 1,
+        cups: current.match.cups,
+        cupPoints: score.cupPoints,
+        pins: current.match.pins,
+        pinPoints: score.pinPoints,
+        totalScore: score.totalScore,
+        driverParticipation: seen.filter(Boolean).length,
+        improvement: current.notes.improvement.trim(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const results = existingIndex >= 0
+        ? current.results.map((item, index) => (index === existingIndex ? result : item))
+        : [result, ...current.results];
+      return { ...current, currentView: navigate ? 'results' : current.currentView, results };
+    });
+  }, [setProject]);
+
+  const endAndSave = () => {
+    if (project.match.timer.status !== 'ended') {
+      const message = project.match.timer.status === 'running'
+        ? 'End the match now and save the current score?'
+        : 'Save this run with the current score?';
+      if (!window.confirm(message)) return;
+      matchTimer.end();
+      playSignal('end');
+      showAlert('end', 'MATCH ENDED', 'Result saved on this device.', 2500);
+    }
+    saveCurrentResult(true);
+  };
+
+  const startNewMatch = () => {
+    if ((project.match.cups > 0 || project.match.pins > 0) && !window.confirm('Start a new match? The current score will reset to 0.')) return;
+    update('match', {
+      ...project.match,
+      sessionId: makeId(),
+      timer: createTimer(),
+      cups: 0,
+      pins: 0,
+      scoringUnlocked: false,
+      driverSeen: [false, false, false, false],
+    });
+    setAlert(null);
+    goTo('match');
+  };
+
+  const clearResults = () => {
+    if (!window.confirm('Clear all saved match results from this device? This cannot be undone.')) return;
+    update('results', []);
+  };
+
+  const view = project.currentView;
+  return (
+    <div className={`app view-${view}`}>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <Header currentView={view} goTo={goTo} saveState={saveState} matchScore={totalScore} currentDriver={matchTimer.currentDriver} />
+      {view === 'home' && <Home project={project} update={update} goTo={goTo} />}
+      {view === 'mission' && <Mission acknowledged={project.missionAcknowledged} acknowledge={() => update('missionAcknowledged', true)} openField={() => setFieldOpen(true)} goTo={goTo} />}
+      {view === 'build' && <BuildPractice project={project} update={update} practiceTimer={practiceTimer} setPracticeMode={setPracticeMode} onPracticeReset={resetPractice} goTo={goTo} />}
+      {view === 'match' && <MatchMode project={project} update={update} matchTimer={{ ...matchTimer, start: onMatchStart }} alert={alert} onMatchStart={onMatchStart} onMatchReset={resetMatchTimer} onScoreReset={resetScore} onSave={endAndSave} onSignal={playSignal} goTo={goTo} />}
+      {view === 'results' && <Results project={project} saveCurrent={() => saveCurrentResult(false)} startNew={startNewMatch} clearResults={clearResults} />}
+      {fieldOpen && <FieldViewer onClose={() => setFieldOpen(false)} />}
+    </div>
+  );
+}

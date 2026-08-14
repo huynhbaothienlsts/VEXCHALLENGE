@@ -1,52 +1,65 @@
-import { useEffect, useRef, useState } from 'react';
-import { createInitialProject, STORAGE_KEY } from '../data/challenge';
+import { useCallback, useEffect, useState } from 'react';
+import { createInitialProject, normalizeProject } from '../data/challenge';
 
-const loadProject = () => {
+const STORAGE_KEY = 'vex-challenge-control-center-v2';
+
+const readStoredProject = () => {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? { ...createInitialProject(), ...JSON.parse(saved) } : createInitialProject();
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored ? normalizeProject(JSON.parse(stored)) : createInitialProject();
   } catch {
     return createInitialProject();
   }
 };
 
+const setAtPath = (source, path, nextValue) => {
+  const keys = Array.isArray(path) ? path : path.split('.');
+  const root = Array.isArray(source) ? [...source] : { ...source };
+  let cursor = root;
+
+  keys.forEach((key, index) => {
+    const current = cursor[key];
+    if (index === keys.length - 1) {
+      cursor[key] = typeof nextValue === 'function' ? nextValue(current) : nextValue;
+      return;
+    }
+    cursor[key] = Array.isArray(current) ? [...current] : { ...(current || {}) };
+    cursor = cursor[key];
+  });
+
+  return root;
+};
+
 export function useProject() {
-  const [project, setProject] = useState(loadProject);
-  const [saveState, setSaveState] = useState('Saved locally');
-  const firstRender = useRef(true);
+  const [project, setProject] = useState(readStoredProject);
+  const [saveState, setSaveState] = useState('Saved on this device');
 
   useEffect(() => {
-    if (firstRender.current) firstRender.current = false;
     setSaveState('Saving…');
-    const timer = window.setTimeout(() => {
-      const payload = { ...project, lastSaved: new Date().toISOString() };
+    const save = window.setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-        setSaveState('Saved locally');
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+        setSaveState('Saved on this device');
       } catch {
-        setSaveState('Storage is full — export your project');
+        setSaveState('Could not save on this device');
       }
-    }, 250);
-    return () => window.clearTimeout(timer);
+    }, 120);
+    return () => window.clearTimeout(save);
   }, [project]);
 
-  const update = (path, value) => {
-    setProject((previous) => {
-      const next = structuredClone(previous);
-      const keys = Array.isArray(path) ? path : path.split('.');
-      let target = next;
-      keys.slice(0, -1).forEach((key) => { target = target[key]; });
-      const finalKey = keys.at(-1);
-      target[finalKey] = typeof value === 'function' ? value(target[finalKey]) : value;
-      return next;
-    });
-  };
+  const update = useCallback((path, value) => {
+    setProject((current) => setAtPath(current, path, value));
+  }, []);
 
-  const replaceProject = (value) => setProject({ ...createInitialProject(), ...value });
-  const resetProject = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setProject(createInitialProject());
-  };
+  const resetAll = useCallback(() => {
+    const fresh = createInitialProject();
+    setProject(fresh);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // The fresh in-memory state still works if storage is unavailable.
+    }
+  }, []);
 
-  return { project, update, replaceProject, resetProject, saveState };
+  return { project, setProject, update, resetAll, saveState };
 }
