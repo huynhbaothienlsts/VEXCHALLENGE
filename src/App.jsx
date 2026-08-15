@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ACTIVITY_TIMELINE, BUILD_STEPS, DRIVER_PHASES, MATCH_TYPES, MISSION, NAV_ITEMS,
-  START_RULES, TEAM_COLORS, createTeamScore, createTimer, makeId,
+  OFFICIAL_MATCH_TYPES, SOUND_PRESETS, START_RULES, TEAM_COLORS, createTeamScore, createTimer, makeId,
 } from './data/challenge';
 import { useProject } from './hooks/useProject';
-import { calculateScore, driverFromRemaining, formatTime } from './utils/challenge';
+import { buildTournamentStandings, calculateScore, driverFromRemaining, formatTime } from './utils/challenge';
 
 const csvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
@@ -17,6 +17,27 @@ const downloadText = (filename, content, type) => {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+const SOUND_PATTERNS = {
+  arena: {
+    start: [[440, 0, .08, 'square'], [660, .1, .12, 'square'], [880, .24, .18, 'square']],
+    change: [[880, 0, .11, 'square'], [880, .16, .11, 'square'], [1175, .32, .2, 'square']],
+    end: [[784, 0, .16, 'square'], [587, .2, .18, 'square'], [392, .42, .38, 'square']],
+    victory: [[523, 0, .13, 'triangle'], [659, .14, .13, 'triangle'], [784, .28, .16, 'triangle'], [1047, .47, .5, 'triangle']],
+  },
+  power: {
+    start: [[330, 0, .1, 'sawtooth', .12, 660], [660, .13, .22, 'sawtooth', .13, 990]],
+    change: [[392, 0, .12, 'sawtooth', .14, 784], [523, .18, .12, 'sawtooth', .14, 1047]],
+    end: [[988, 0, .16, 'sawtooth', .13, 494], [659, .2, .2, 'sawtooth', .13, 330], [247, .45, .4, 'square']],
+    victory: [[392, 0, .12, 'sawtooth', .11, 523], [523, .13, .12, 'sawtooth', .11, 659], [659, .26, .14, 'sawtooth', .11, 784], [988, .43, .46, 'sawtooth', .12, 1319]],
+  },
+  rally: {
+    start: [[523, 0, .09, 'triangle'], [659, .1, .09, 'triangle'], [784, .2, .18, 'triangle']],
+    change: [[784, 0, .09, 'triangle'], [988, .11, .09, 'triangle'], [784, .22, .09, 'triangle'], [1175, .34, .2, 'triangle']],
+    end: [[659, 0, .13, 'triangle'], [523, .15, .13, 'triangle'], [392, .3, .32, 'triangle']],
+    victory: [[523, 0, .1, 'triangle'], [659, .11, .1, 'triangle'], [784, .22, .1, 'triangle'], [988, .33, .1, 'triangle'], [1175, .45, .42, 'triangle']],
+  },
 };
 
 const resizeTeamImage = (file) => new Promise((resolve, reject) => {
@@ -143,7 +164,7 @@ function Header({ currentView, goTo, saveState, teams, scores, currentDriver }) 
   );
 }
 
-function FieldViewer({ onClose }) {
+function FieldViewer({ media, onClose }) {
   const [zoom, setZoom] = useState(1);
   useEffect(() => {
     const closeOnEscape = (event) => { if (event.key === 'Escape') onClose(); };
@@ -152,14 +173,14 @@ function FieldViewer({ onClose }) {
     return () => { document.removeEventListener('keydown', closeOnEscape); document.body.classList.remove('modal-open'); };
   }, [onClose]);
   return (
-    <div className="field-modal" role="dialog" aria-modal="true" aria-label="Full field map">
-      <div className="field-modal-bar"><strong>Official Challenge Field</strong><div>
+    <div className="field-modal" role="dialog" aria-modal="true" aria-label={media.title}>
+      <div className="field-modal-bar"><strong>{media.title}</strong><div>
         <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(1, value - 0.25))}>−</button>
         <span>{Math.round(zoom * 100)}%</span>
         <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(3, value + 0.25))}>+</button>
         <button type="button" className="close-field" onClick={onClose}>Close</button>
       </div></div>
-      <div className="field-pan"><img src="./images/field.jpg" alt="Challenge field showing the Supply Zone, three team zones, delivery zones and robot starts" style={{ width: `${zoom * 100}%` }} /></div>
+      <div className="field-pan"><img src={media.src} alt={media.alt} style={{ width: `${zoom * 100}%` }} /></div>
     </div>
   );
 }
@@ -209,10 +230,17 @@ function TeamsPage({ project, update, goTo }) {
   );
 }
 
-function Mission({ acknowledged, acknowledge, openField, goTo }) {
+function Mission({ acknowledged, acknowledge, openMedia, goTo }) {
+  const officialField = { src: './images/field.jpg', title: 'Official Challenge Field', alt: 'Challenge field showing the Supply Zone, three team zones, delivery zones and robot starts' };
+  const neutralZone = { src: './images/neutral-zone.webp', title: 'Neutral Zone Setup', alt: 'Neutral Zone prepared with Cups and Pins before the match' };
+  const startingPosition = { src: './images/starting-position.webp', title: 'Robot Starting Positions', alt: 'Three Clawbots placed at their marked starting positions around the field' };
   return (
     <main id="main-content" className="mission-page page-shell"><header className="page-lead"><span className="step-tag">02 · Mission & Field</span><h1>Collect. Carry. Deliver.</h1><p>{MISSION}</p></header>
-      <section className="field-stage"><div className="field-heading"><div><span className="eyebrow">Official layout</span><h2>Three teams compete at once</h2></div><button type="button" className="secondary-action" onClick={openField}>View Full Field</button></div><button className="field-image-button" type="button" onClick={openField} aria-label="Open full field map"><img src="./images/field.jpg" alt="Challenge field with Supply Zone, three team zones, starts and delivery zones" /><span>Tap to enlarge</span></button></section>
+      <section className="field-stage"><div className="field-heading"><div><span className="eyebrow">Official layout</span><h2>Three teams compete at once</h2></div><button type="button" className="secondary-action" onClick={() => openMedia(officialField)}>View Full Field</button></div><button className="field-image-button" type="button" onClick={() => openMedia(officialField)} aria-label="Open full field map"><img src="./images/field.jpg" alt="Challenge field with Supply Zone, three team zones, starts and delivery zones" /><span>Tap to enlarge</span></button></section>
+      <section className="mission-setup-section" aria-labelledby="field-setup-title"><div className="field-heading"><div><span className="eyebrow">Before the timer starts</span><h2 id="field-setup-title">Set the field correctly</h2></div><span className="setup-summary">32 Cups · 32 Pins · 3 robots</span></div><div className="mission-setup-grid">
+        <article><button type="button" onClick={() => openMedia(neutralZone)} aria-label="Enlarge Neutral Zone setup"><img src="./images/neutral-zone.webp" alt={neutralZone.alt} loading="lazy" /><span>View larger</span></button><div><span className="setup-number">64 objects</span><h3>Neutral Zone</h3><p>Place <b>32 Cups</b> and <b>32 Pins</b> in the shared Neutral Zone before every match.</p></div></article>
+        <article><button type="button" onClick={() => openMedia(startingPosition)} aria-label="Enlarge robot starting positions"><img src="./images/starting-position.webp" alt={startingPosition.alt} loading="lazy" /><span>View larger</span></button><div><span className="setup-number">3 marked starts</span><h3>Starting Positions</h3><p>Each robot starts at its own marker, touches the field wall and waits for the timer.</p></div></article>
+      </div></section>
       <section className="rules-strip" aria-label="Starting rules">{START_RULES.map(([number, rule]) => <div key={number}><span>{number}</span><strong>{rule}</strong></div>)}</section>
       <section className="scoring-explainer"><div className="object-visual"><img src="./images/cup-and-pin.jfif" alt="VEX Cup and Pin game objects" /></div><div className="scoring-copy"><span className="eyebrow">Same scoring for every team</span><h2>Two objects. One formula.</h2><p>Total Score = Cups × 5 + Pins × 10</p></div><div className="score-values"><div><span>Cup</span><strong>5</strong><small>points</small></div><div><span>Pin</span><strong>10</strong><small>points</small></div></div></section>
       <div className="page-action-row">{acknowledged && <span className="complete-note">✓ Mission understood</span>}<button className="primary-action" type="button" onClick={() => { acknowledge(); goTo('build'); }}>I Understand the Mission <span aria-hidden="true">→</span></button></div>
@@ -247,10 +275,11 @@ function BuildPractice({ project, update, practiceTimer, setPracticeMode, onPrac
 }
 
 function MiniCounter({ label, count, disabled, onChange }) {
-  return <div className="mini-counter"><span>{label}<small>{label === 'Cups' ? '× 5' : '× 10'}</small></span><button type="button" aria-label={`Remove one ${label}`} disabled={disabled || count === 0} onClick={() => onChange(-1)}>−</button><strong>{count}</strong><button type="button" aria-label={`Add one ${label}`} disabled={disabled} onClick={() => onChange(1)}>+</button></div>;
+  const type = label === 'Cups' ? 'cup' : 'pin';
+  return <div className="mini-counter"><span className="counter-label"><i className={`game-object-icon ${type}`} aria-hidden="true"><img src="./images/cup-and-pin.jfif" alt="" /></i><b>{label}</b><small>{label === 'Cups' ? '× 5' : '× 10'}</small></span><button type="button" aria-label={`Remove one ${label}`} disabled={disabled || count === 0} onClick={() => onChange(-1)}>−</button><strong>{count}</strong><button type="button" aria-label={`Add one ${label}`} disabled={disabled} onClick={() => onChange(1)}>+</button></div>;
 }
 
-function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchReset, onScoresReset, onSave, goTo }) {
+function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchReset, onScoresReset, onSave, onPreviewSound, goTo }) {
   const matchArea = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   useEffect(() => { const track = () => setIsFullscreen(Boolean(document.fullscreenElement)); document.addEventListener('fullscreenchange', track); return () => document.removeEventListener('fullscreenchange', track); }, []);
@@ -264,7 +293,7 @@ function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchRe
   return (
     <main id="main-content" className="match-page"><section ref={matchArea} className={`match-console three-team-match ${alert ? `has-${alert.type}-alert` : ''}`}>
       {alert && <div className={`match-alert alert-${alert.type}`} role="alert"><strong>{alert.message}</strong>{alert.detail && <span>{alert.detail}</span>}</div>}
-      <header className="match-topbar"><div className="match-identity"><label><span>Run</span><select value={project.match.type} onChange={(event) => update('match.type', event.target.value)}>{MATCH_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><b>3 teams · 12 drivers · 1 shared timer</b></div><div className="match-tools"><button type="button" aria-pressed={project.match.soundEnabled} onClick={() => update('match.soundEnabled', (value) => !value)}>{project.match.soundEnabled ? 'Sound on' : 'Sound off'}</button><button type="button" onClick={toggleFullscreen}>{isFullscreen ? 'Exit full screen' : 'Full screen'}</button><button type="button" onClick={() => goTo('mission')}>Field map</button></div></header>
+      <header className="match-topbar"><div className="match-identity"><label><span>Run</span><select value={project.match.type} onChange={(event) => update('match.type', event.target.value)}>{MATCH_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><b>3 teams · 12 drivers · 1 shared timer</b></div><div className="match-tools"><div className="sound-controls"><button type="button" aria-pressed={project.match.soundEnabled} onClick={() => update('match.soundEnabled', (value) => !value)}>{project.match.soundEnabled ? 'Sound on' : 'Sound off'}</button><select aria-label="Competition sound" value={project.match.soundPreset} onChange={(event) => update('match.soundPreset', event.target.value)}>{SOUND_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select><button type="button" className="sound-preview" aria-label="Preview selected competition sound" onClick={() => onPreviewSound('change', true)}>▶</button></div><button type="button" onClick={toggleFullscreen}>{isFullscreen ? 'Exit full screen' : 'Full screen'}</button><button type="button" onClick={() => goTo('mission')}>Field map</button></div></header>
       <div className="driver-stages">{DRIVER_PHASES.map(([driver, time], index) => <div key={driver} className={`${index === matchTimer.currentDriver ? 'current' : ''} ${index < matchTimer.currentDriver ? 'complete' : ''}`}><span>{index < matchTimer.currentDriver ? '✓' : `0${index + 1}`}</span><strong>{driver}</strong><small>{time}</small></div>)}</div>
       <section className="match-rosters" aria-label="All team driver rosters">{project.teams.map((team, teamIndex) => <article key={team.id} style={{ '--team-color': TEAM_COLORS[teamIndex] }}><div><TeamAvatar team={team} index={teamIndex} /><strong>{team.name}</strong></div><ol>{team.members.map((name, driverIndex) => <li key={`${team.id}-${driverIndex}`} className={driverIndex === matchTimer.currentDriver ? 'current' : ''}><span>D{driverIndex + 1}</span>{name || `Driver ${driverIndex + 1}`}</li>)}</ol></article>)}</section>
       <div className="match-main-grid"><section className="match-timer" aria-live="polite"><span className="current-driver-label">All teams · Driver {matchTimer.currentDriver + 1}</span><h2>DRIVE</h2><strong className="giant-time">{matchTimer.display}</strong><TimerControls timer={{ ...matchTimer, start: onMatchStart }} onReset={onMatchReset} /></section>
@@ -285,36 +314,39 @@ const rankTeams = (teams) => {
   return sorted.map((team) => ({ ...team, rank: sorted.findIndex((item) => item.totalScore === team.totalScore) + 1 }));
 };
 
-function Results({ project, saveCurrent, startNew, clearResults, goTo }) {
+function Results({ project, saveCurrent, startNew, clearResults, onReplayCelebration, goTo }) {
   const latest = project.results[0];
   const latestRanked = latest ? rankTeams(latest.teams) : [];
   const maxScore = latestRanked[0]?.totalScore ?? 0;
   const winners = latestRanked.filter((team) => team.totalScore === maxScore);
   const teamById = (id) => project.teams.find((team) => team.id === id) || { name: 'Team', image: '' };
+  const { standings, completedMatchTypes } = useMemo(() => buildTournamentStandings(project.teams, project.results), [project.results, project.teams]);
+  const tournamentRanked = rankTeams(standings);
   const exportCsv = () => {
     if (!project.results.length) return;
     const headings = ['Match', 'Run number', 'Date/time', 'Rank', 'Team', 'Cups', 'Cup points', 'Pins', 'Pin points', 'Total score', 'Driver participation'];
     const rows = project.results.flatMap((result) => rankTeams(result.teams).map((team) => [result.matchType, result.matchNumber, new Date(result.createdAt).toLocaleString(), team.rank, team.teamName, team.cups, team.cupPoints, team.pins, team.pinPoints, team.totalScore, `${team.driverParticipation}/4`]));
-    downloadText('vex-three-team-results.csv', `\uFEFF${[headings, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n')}`, 'text/csv;charset=utf-8');
+    const tournamentHeadings = ['Tournament rank', 'Team', ...OFFICIAL_MATCH_TYPES, 'Official total'];
+    const tournamentRows = tournamentRanked.map((team) => [team.rank, team.name, ...OFFICIAL_MATCH_TYPES.map((type) => team.matchScores[type] ?? ''), team.totalScore]);
+    const csvRows = [headings, ...rows, [], ['TOURNAMENT STANDINGS - PRACTICE RUN EXCLUDED'], tournamentHeadings, ...tournamentRows];
+    downloadText('vex-three-team-results.csv', `\uFEFF${csvRows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`, 'text/csv;charset=utf-8');
   };
-  const overall = project.teams.map((team) => {
-    const scores = project.results.flatMap((result) => result.teams.filter((item) => item.teamId === team.id).map((item) => item.totalScore));
-    return { ...team, totalScore: scores.length ? Math.max(...scores) : 0 };
-  });
   return (
     <main id="main-content" className="results-page page-shell"><header className="page-lead compact-lead results-lead"><div><span className="step-tag">05 · Results</span><h1>Results & Rankings</h1><p>One saved match contains scores for all three teams.</p></div><div className="result-actions"><button type="button" onClick={saveCurrent}>Save Result</button><button type="button" onClick={() => window.print()}>Print</button><button type="button" onClick={exportCsv} disabled={!project.results.length}>Export CSV</button></div></header>
-      {latest ? <><section className="winner-celebration"><div className="confetti-mark" aria-hidden="true">★</div><div><span className="eyebrow">Match complete</span><h2>{winners.length === 1 ? `Congratulations, ${winners[0].teamName}!` : `Congratulations, ${winners.map((team) => team.teamName).join(' & ')}!`}</h2><p>{winners.length === 1 ? `Highest score: ${maxScore} points` : `Joint winners with ${maxScore} points - no tie-break rule applied.`}</p></div><div className="winner-photos">{winners.map((winner) => { const team = teamById(winner.teamId); const index = project.teams.findIndex((item) => item.id === winner.teamId); return <TeamAvatar key={winner.teamId} team={team} index={index} large />; })}</div></section>
+      {latest ? <><section className="winner-celebration"><div className="confetti-mark" aria-hidden="true">★</div><div><span className="eyebrow">Match complete</span><h2>{winners.length === 1 ? `Congratulations, ${winners[0].teamName}!` : `Congratulations, ${winners.map((team) => team.teamName).join(' & ')}!`}</h2><p>{winners.length === 1 ? `Highest score: ${maxScore} points` : `Joint winners with ${maxScore} points - no tie-break rule applied.`}</p></div><div className="winner-actions"><div className="winner-photos">{winners.map((winner) => { const team = teamById(winner.teamId); const index = project.teams.findIndex((item) => item.id === winner.teamId); return <TeamAvatar key={winner.teamId} team={team} index={index} large />; })}</div><button type="button" onClick={onReplayCelebration}>Replay sound</button></div></section>
         <section className="latest-ranking"><div className="results-heading"><div><span className="eyebrow">Latest saved match</span><h2>{latest.matchType} · Run {latest.matchNumber}</h2></div><span>{new Date(latest.createdAt).toLocaleString()}</span></div><div className="podium-list">{latestRanked.map((result) => { const team = teamById(result.teamId); const index = project.teams.findIndex((item) => item.id === result.teamId); return <article key={result.teamId} className={`rank-${result.rank}`}><span className="rank-number">#{result.rank}</span><TeamAvatar team={team} index={index} large /><div><h3>{result.teamName}</h3><p>{result.cups} Cups · {result.pins} Pins · Drivers {result.driverParticipation}/4</p></div><strong>{result.totalScore}<small>points</small></strong></article>; })}</div></section>
       </> : <section className="empty-results"><span className="icon">🏁</span><h2>No saved matches yet</h2><p>Start a four-minute match and score all three teams.</p><button className="primary-action" type="button" onClick={startNew}>Start First Match</button></section>}
-      {project.results.length > 0 && <><section className="overall-board"><div className="results-heading"><div><span className="eyebrow">Best score per team</span><h2>Overall leaderboard</h2></div><span>Ties share the same rank</span></div><ol className="leaderboard">{rankTeams(overall).map((team) => <li key={team.id}><span className="rank">#{rankTeams(overall).find((item) => item.id === team.id).rank}</span><TeamAvatar team={team} index={project.teams.findIndex((item) => item.id === team.id)} /><strong>{team.name}</strong><b>{team.totalScore} pts</b></li>)}</ol></section>
-        <section className="history-section"><div className="results-heading"><div><span className="eyebrow">Saved on this device</span><h2>Match history</h2></div><span>{project.results.length} match{project.results.length === 1 ? '' : 'es'}</span></div>{project.results.map((result) => <article className="match-history-card" key={result.id}><header><strong>{result.matchType} · Run {result.matchNumber}</strong><span>{new Date(result.createdAt).toLocaleString()}</span></header><div>{rankTeams(result.teams).map((team) => <p key={team.teamId}><b>#{team.rank} {team.teamName}</b><span>{team.cups} Cups · {team.pins} Pins</span><strong>{team.totalScore} pts</strong></p>)}</div></article>)}</section></>}
+      {project.results.length > 0 && <><section className="overall-board tournament-board"><div className="results-heading"><div><span className="eyebrow">Official total · Practice excluded</span><h2>Tournament Standings</h2></div><span>{completedMatchTypes.length}/3 official matches recorded · Ties share the same rank</span></div><div className="tournament-table" role="table" aria-label="Tournament standings based on Match 1, Match 2 and Final Match"><div className="tournament-row tournament-header" role="row"><span role="columnheader">Rank</span><span role="columnheader">Team</span>{OFFICIAL_MATCH_TYPES.map((type) => <span role="columnheader" key={type}>{type}</span>)}<span role="columnheader">Total</span></div>{tournamentRanked.map((team) => <div className={`tournament-row rank-${team.rank}`} role="row" key={team.id}><strong className="rank" role="cell">#{team.rank}</strong><span className="tournament-team" role="cell"><TeamAvatar team={team} index={project.teams.findIndex((item) => item.id === team.id)} /><b>{team.name}</b></span>{OFFICIAL_MATCH_TYPES.map((type) => <span className="match-score-cell" role="cell" key={type}>{team.matchScores[type] ?? '—'}</span>)}<strong className="tournament-total" role="cell">{team.totalScore}<small>pts</small></strong></div>)}</div><p className="ranking-rule">Tournament Total = Match 1 + Match 2 + Final Match. Practice Run scores never count toward the ranking.</p></section>
+        <section className="history-section"><div className="results-heading"><div><span className="eyebrow">Score by match · Saved on this device</span><h2>Match History</h2></div><span>{project.results.length} match{project.results.length === 1 ? '' : 'es'}</span></div>{project.results.map((result) => <article className={`match-history-card ${result.matchType === 'Practice Run' ? 'practice-result' : ''}`} key={result.id}><header><strong>{result.matchType} · Run {result.matchNumber}</strong><div><span className="match-counting-badge">{result.matchType === 'Practice Run' ? 'Not counted' : 'Counts toward total'}</span><time>{new Date(result.createdAt).toLocaleString()}</time></div></header><div>{rankTeams(result.teams).map((team) => <p key={team.teamId}><b>#{team.rank} {team.teamName}</b><span>{team.cups} Cups · {team.pins} Pins</span><strong>{team.totalScore} pts</strong></p>)}</div></article>)}</section></>}
       <div className="results-bottom-actions"><button type="button" className="primary-action" onClick={startNew}>Start New Match</button><button type="button" onClick={() => goTo('certificate')}>Create Certificates</button><button type="button" className="danger-quiet" disabled={!project.results.length} onClick={clearResults}>Clear Results</button></div>
     </main>
   );
 }
 
 function CertificateCard({ student }) {
-  return <article className="certificate-page"><img src="./images/certificate-template.png" alt="LSTS VEX V5 Certificate of Participation template" /><div className="certificate-student-name">{student.name}</div><div className="certificate-team-name">{student.teamName}</div></article>;
+  const nameClass = student.name.length > 34 ? 'very-long' : student.name.length > 25 ? 'long' : '';
+  const teamClass = student.teamName.length > 24 ? 'very-long' : student.teamName.length > 17 ? 'long' : '';
+  return <article className="certificate-page"><img src="./images/certificate-template.png" alt="LSTS VEX V5 Certificate of Participation with signature" /><div className={`certificate-student-name ${nameClass}`}>{student.name}</div><div className={`certificate-team-name ${teamClass}`}>{student.teamName}</div></article>;
 }
 
 function CertificatePage({ teams, goTo }) {
@@ -338,24 +370,46 @@ function CertificatePage({ teams, goTo }) {
 
 export default function App() {
   const { project, setProject, update, saveState } = useProject();
-  const [fieldOpen, setFieldOpen] = useState(false);
+  const view = project.currentView;
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [alert, setAlert] = useState(null);
   const alertTimeout = useRef(null);
   const audioContext = useRef(null);
+  const previousView = useRef(null);
   const goTo = useCallback((view) => { update('currentView', view); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [update]);
   const setMatchTimer = useCallback((value) => update('match.timer', value), [update]);
   const setPracticeTimer = useCallback((value) => update('practice.timer', value), [update]);
-  const playSignal = useCallback((kind = 'change') => {
-    if (!project.match.soundEnabled) return;
+  const playSignal = useCallback((kind = 'change', force = false) => {
+    if (!project.match.soundEnabled && !force) return;
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) return;
       audioContext.current ||= new AudioContextClass();
       const context = audioContext.current;
-      const tone = (frequency, start, length) => { const oscillator = context.createOscillator(); const gain = context.createGain(); oscillator.frequency.value = frequency; oscillator.type = 'square'; gain.gain.setValueAtTime(0.0001, context.currentTime + start); gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + start + 0.01); gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + start + length); oscillator.connect(gain).connect(context.destination); oscillator.start(context.currentTime + start); oscillator.stop(context.currentTime + start + length + 0.02); };
-      if (kind === 'end') { tone(520, 0, 0.2); tone(390, 0.28, 0.42); } else tone(740, 0, 0.18);
+      context.resume?.().catch?.(() => {});
+      const pattern = SOUND_PATTERNS[project.match.soundPreset]?.[kind] || SOUND_PATTERNS.arena[kind] || SOUND_PATTERNS.arena.change;
+      pattern.forEach(([frequency, start, length, type = 'square', volume = .16, endFrequency = frequency]) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.frequency.setValueAtTime(frequency, context.currentTime + start);
+        if (endFrequency !== frequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, context.currentTime + start + length);
+        oscillator.type = type;
+        gain.gain.setValueAtTime(0.0001, context.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(volume, context.currentTime + start + .015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + start + length);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(context.currentTime + start);
+        oscillator.stop(context.currentTime + start + length + .03);
+      });
     } catch { /* Visual alerts remain available. */ }
-  }, [project.match.soundEnabled]);
+  }, [project.match.soundEnabled, project.match.soundPreset]);
+  useEffect(() => {
+    const enteringResults = view === 'results' && previousView.current !== 'results';
+    previousView.current = view;
+    if (!enteringResults || !project.results[0]) return undefined;
+    const celebrationTimer = window.setTimeout(() => playSignal('victory'), 450);
+    return () => window.clearTimeout(celebrationTimer);
+  }, [playSignal, project.results, view]);
   const showAlert = useCallback((type, message, detail, duration = 3200) => { window.clearTimeout(alertTimeout.current); setAlert({ type, message, detail, id: Date.now() }); alertTimeout.current = window.setTimeout(() => setAlert(null), duration); }, []);
   useEffect(() => () => { window.clearTimeout(alertTimeout.current); audioContext.current?.close?.(); }, []);
   const markDriverSeen = useCallback((index) => update(['match', 'driverSeen', index], true), [update]);
@@ -370,7 +424,7 @@ export default function App() {
     onDriverChange: (nextDriver, previousDriver) => { update(['practice', 'checklistByTeam', practiceTeam.id, previousDriver], true); playSignal('change'); showAlert('change', 'CHANGE DRIVER!', practiceTeam.members[nextDriver] || `Driver ${nextDriver + 1}`); },
     onEnd: () => { if (project.practice.mode === 240_000) update(['practice', 'checklistByTeam', practiceTeam.id], [true, true, true, true]); else update(['practice', 'checklistByTeam', practiceTeam.id, project.practice.driverIndex], true); playSignal('end'); },
   });
-  const startMatch = () => { markDriverSeen(matchTimer.currentDriver); playSignal('change'); matchTimer.start(); };
+  const startMatch = () => { markDriverSeen(matchTimer.currentDriver); playSignal('start'); matchTimer.start(); };
   const resetMatch = () => { if (!window.confirm('Reset the shared 4-minute timer? Team scores will stay unchanged.')) return; matchTimer.reset(); update('match.driverSeen', [false, false, false, false]); update('match.scores', project.teams.map((team) => ({ ...(project.match.scores.find((score) => score.teamId === team.id) || createTeamScore(team.id)), scoringUnlocked: false }))); setAlert(null); };
   const resetScores = () => { if (!window.confirm('Reset Cups, Pins and Total Score for all three teams?')) return; update('match.scores', project.teams.map((team) => createTeamScore(team.id))); };
   const setPracticeMode = (durationMs) => { if (project.practice.timer.status === 'running' && !window.confirm('Change practice mode and reset the timer?')) return; update('practice.mode', durationMs); update('practice.timer', createTimer(durationMs)); };
@@ -393,15 +447,14 @@ export default function App() {
   const endAndSave = () => { if (project.match.timer.status !== 'ended') { if (!window.confirm(project.match.timer.status === 'running' ? 'End the match now and save all three team scores?' : 'Save all three team scores for this run?')) return; matchTimer.end(); playSignal('end'); } saveCurrentResult(true); };
   const startNewMatch = () => { const hasScore = project.match.scores.some((score) => score.cups || score.pins); if (hasScore && !window.confirm('Start a new match? All current team scores will reset to 0.')) return; update('match', { ...project.match, sessionId: makeId(), timer: createTimer(), scores: project.teams.map((team) => createTeamScore(team.id)), driverSeen: [false, false, false, false] }); setAlert(null); goTo('match'); };
   const clearResults = () => { if (window.confirm('Clear all saved match results from this device? This cannot be undone.')) update('results', []); };
-  const view = project.currentView;
   return <div className={`app view-${view}`}><a className="skip-link" href="#main-content">Skip to main content</a><Header currentView={view} goTo={goTo} saveState={saveState} teams={project.teams} scores={project.match.scores} currentDriver={matchTimer.currentDriver} />
     {view === 'home' && <Home goTo={goTo} />}
     {view === 'teams' && <TeamsPage project={project} update={update} goTo={goTo} />}
-    {view === 'mission' && <Mission acknowledged={project.missionAcknowledged} acknowledge={() => update('missionAcknowledged', true)} openField={() => setFieldOpen(true)} goTo={goTo} />}
+    {view === 'mission' && <Mission acknowledged={project.missionAcknowledged} acknowledge={() => update('missionAcknowledged', true)} openMedia={setSelectedMedia} goTo={goTo} />}
     {view === 'build' && <BuildPractice project={project} update={update} practiceTimer={practiceTimer} setPracticeMode={setPracticeMode} onPracticeReset={resetPractice} goTo={goTo} />}
-    {view === 'match' && <MatchMode project={project} update={update} matchTimer={matchTimer} alert={alert} onMatchStart={startMatch} onMatchReset={resetMatch} onScoresReset={resetScores} onSave={endAndSave} goTo={goTo} />}
-    {view === 'results' && <Results project={project} saveCurrent={() => saveCurrentResult(false)} startNew={startNewMatch} clearResults={clearResults} goTo={goTo} />}
+    {view === 'match' && <MatchMode project={project} update={update} matchTimer={matchTimer} alert={alert} onMatchStart={startMatch} onMatchReset={resetMatch} onScoresReset={resetScores} onSave={endAndSave} onPreviewSound={playSignal} goTo={goTo} />}
+    {view === 'results' && <Results project={project} saveCurrent={() => saveCurrentResult(false)} startNew={startNewMatch} clearResults={clearResults} onReplayCelebration={() => playSignal('victory', true)} goTo={goTo} />}
     {view === 'certificate' && <CertificatePage teams={project.teams} goTo={goTo} />}
-    {fieldOpen && <FieldViewer onClose={() => setFieldOpen(false)} />}
+    {selectedMedia && <FieldViewer media={selectedMedia} onClose={() => setSelectedMedia(null)} />}
   </div>;
 }

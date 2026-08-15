@@ -14,13 +14,17 @@ The site is designed for three teams of four students. Every team completes the 
 - A three-team roster matrix for all 12 drivers, plus a one-team device selector for independent practice
 - Optional team-photo upload; photos are resized in the browser and shown on Teams and Results
 - The original `Pictures/Field.jpg` field map, with full-screen viewing and zoom controls
+- The supplied Neutral Zone and Starting Position photos, with enlarged viewing and a clear `32 Cups + 32 Pins` setup reminder
 - Team-specific one-minute practice and four-minute full-match practice using names from Teams
 - One shared, timestamp-based 4:00 Match Timer for all three teams, with Pause, Resume and reload recovery
 - Automatic Driver 1–4 rotation for all teams at 3:00, 2:00 and 1:00
 - Visual and optional sound alerts for `CHANGE DRIVER!` and `MATCH ENDED`
 - Three independent live score panels using only `Cups × 5 + Pins × 10`
+- Cup and Pin reference images directly beside the live counters
+- Three selectable competition sound styles, automatic Driver-change cues and a result celebration sound
 - Optional score lock when a match ends, with a manual correction unlock
-- Automatic post-match ranking, winner celebration, tied ranks, local history, printing and CSV export
+- Per-match rankings plus official tournament standings calculated only from `Match 1 + Match 2 + Final Match`; Practice Run is excluded
+- Automatic winner celebration, tied ranks, local history, printing and CSV export with tournament totals
 - Certificates populated from the roster and based on the supplied template; print one student or all students to PDF
 - Automatic saving to browser `localStorage`; no account, backend or API key
 - Responsive layouts for laptops, landscape tablets, projectors and phones
@@ -68,6 +72,8 @@ The automated tests verify:
 - Timer formatting ends at `0:00`
 - Three teams keep independent scores
 - Existing version-2 data migrates to the new three-team format
+- Practice scores are excluded from tournament standings
+- Only the latest saved result for each official match type is counted
 
 ## Deploy to GitHub Pages
 
@@ -109,7 +115,9 @@ public/images/
   v5-clawbot.webp          Supplied Clawbot visual
   cup-and-pin.jfif         Supplied scoring objects
   international-teams.webp Optimized supplied team photo
-  certificate-template.png Exact supplied certificate template
+  neutral-zone.webp        Optimized supplied Neutral Zone photo
+  starting-position.webp   Optimized supplied robot start photo
+  certificate-template.png Latest supplied signed Certificate.png template
 test/challenge.test.js     Scoring and timing tests
 scripts/
   build.mjs                Production build
@@ -135,6 +143,14 @@ All three rosters, compressed team photos, the selected practice team, short imp
 4. In the browser print window choose **Save as PDF**, paper **A4**, orientation **Portrait**, scale **100%** and margins **None**.
 
 PDF generation uses the browser's print engine, so no server, account or extra library is required.
+
+## Tournament ranking rule
+
+The tournament leaderboard uses one result from each official match type:
+
+`Tournament Total = Match 1 + Match 2 + Final Match`
+
+`Practice Run` remains visible in Match History but never contributes to Tournament Total. If an official match is saved again, its latest saved version replaces the earlier version in the tournament calculation instead of being counted twice.
 
 ## Source assets
 

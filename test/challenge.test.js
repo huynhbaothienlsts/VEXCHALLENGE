@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateScore, clampCount, driverFromRemaining, formatTime } from '../src/utils/challenge.js';
+import { buildTournamentStandings, calculateScore, clampCount, driverFromRemaining, formatTime } from '../src/utils/challenge.js';
 import { normalizeProject } from '../src/data/challenge.js';
 
 test('score calculator uses only Cups × 5 + Pins × 10', () => {
@@ -50,4 +50,35 @@ test('version 2 team data migrates into the first of three teams', () => {
   assert.deepEqual(migrated.teams[0].members, ['A', 'B', 'C', 'D']);
   assert.equal(migrated.match.scores[0].cups, 3);
   assert.equal(migrated.match.scores[0].pins, 2);
+});
+
+test('tournament standings exclude Practice Run and total the three official matches', () => {
+  const teams = [{ id: 'team-1', name: 'Alpha' }, { id: 'team-2', name: 'Beta' }];
+  const result = (matchType, alpha, beta, updatedAt) => ({
+    matchType,
+    updatedAt,
+    teams: [
+      { teamId: 'team-1', totalScore: alpha },
+      { teamId: 'team-2', totalScore: beta },
+    ],
+  });
+  const results = [
+    result('Practice Run', 500, 500, '2026-08-01T10:00:00Z'),
+    result('Match 1', 30, 40, '2026-08-01T11:00:00Z'),
+    result('Match 2', 50, 20, '2026-08-01T12:00:00Z'),
+    result('Final Match', 25, 60, '2026-08-01T13:00:00Z'),
+  ];
+  const { standings, completedMatchTypes } = buildTournamentStandings(teams, results);
+  assert.deepEqual(completedMatchTypes, ['Match 1', 'Match 2', 'Final Match']);
+  assert.equal(standings.find((team) => team.id === 'team-1').totalScore, 105);
+  assert.equal(standings.find((team) => team.id === 'team-2').totalScore, 120);
+});
+
+test('only the latest saved result for each official match is counted', () => {
+  const teams = [{ id: 'team-1', name: 'Alpha' }];
+  const results = [
+    { matchType: 'Match 1', updatedAt: '2026-08-01T12:00:00Z', teams: [{ teamId: 'team-1', totalScore: 55 }] },
+    { matchType: 'Match 1', updatedAt: '2026-08-01T11:00:00Z', teams: [{ teamId: 'team-1', totalScore: 20 }] },
+  ];
+  assert.equal(buildTournamentStandings(teams, results).standings[0].totalScore, 55);
 });
