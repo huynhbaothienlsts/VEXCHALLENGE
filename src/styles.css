@@ -204,8 +204,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .match-tools button { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--white); background: var(--panel); font-size: 11px; font-weight: 800; }
 .sound-controls { display: flex; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
 .sound-controls button { border: 0; border-radius: 0; }
-.sound-controls select { min-width: 112px; height: 38px; padding: 0 24px 0 8px; border: 0; border-left: 1px solid var(--line); color: var(--white); background: #111f31; font-size: 10px; font-weight: 800; }
-.sound-controls .sound-preview { min-width: 36px; padding: 0; border-left: 1px solid var(--line); color: var(--yellow); }
+.match-track-label { min-height: 38px; display: flex; align-items: center; padding: 0 10px; border-left: 1px solid var(--line); color: var(--yellow); font-size: 9px; font-weight: 850; white-space: nowrap; }
 .driver-stages { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
 .driver-stages div { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 0 10px; padding: 12px 18px; border-right: 1px solid var(--line); color: #77879a; }
 .driver-stages div:last-child { border-right: 0; }
@@ -618,11 +617,11 @@ td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .certificate-screen-frame { display: grid; place-items: center; padding: 22px; border-radius: var(--radius); background: #1b2634; box-shadow: var(--shadow); }
 .certificate-page { position: relative; width: min(100%, 610px); aspect-ratio: 210 / 297; overflow: hidden; color: #171717; background: white; box-shadow: 0 16px 40px rgb(0 0 0 / 35%); }
 .certificate-page > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.certificate-student-name, .certificate-team-name { position: absolute; z-index: 2; overflow: hidden; line-height: 1.1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.certificate-student-name { top: 53.7%; left: 18%; right: 17%; font-family: Georgia, "Times New Roman", serif; font-size: clamp(13px, 2.25vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.certificate-student-name, .certificate-team-name { position: absolute; z-index: 2; overflow: hidden; line-height: 1.1; text-align: center; text-overflow: clip; white-space: nowrap; }
+.certificate-student-name { top: 52.2%; left: 17%; right: 16%; font-family: Georgia, "Times New Roman", serif; font-size: clamp(12px, 2vw, 21px); font-weight: 800; letter-spacing: 0; }
 .certificate-team-name { top: 59.05%; left: 36%; right: 20%; color: #171717; font-size: clamp(8px, 1.15vw, 12px); font-weight: 850; letter-spacing: .04em; }
-.certificate-student-name.long { font-size: clamp(11px, 1.85vw, 20px); }
-.certificate-student-name.very-long { font-size: clamp(9px, 1.55vw, 16px); }
+.certificate-student-name.long { font-size: clamp(10px, 1.6vw, 17px); }
+.certificate-student-name.very-long { font-size: clamp(8px, 1.28vw, 14px); }
 .certificate-team-name.long { font-size: clamp(7px, .95vw, 10px); }
 .certificate-team-name.very-long { font-size: clamp(6px, .78vw, 8px); }
 .certificate-preview > p { color: var(--muted); font-size: 11px; text-align: center; }
@@ -747,9 +746,9 @@ td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
   .is-printing-certificates .certificate-print-stack { display: block !important; }
   .is-printing-certificates .certificate-page { width: 210mm !important; height: 297mm !important; max-width: none !important; break-after: page; page-break-after: always; box-shadow: none !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .is-printing-certificates .certificate-page:last-child { break-after: auto; page-break-after: auto; }
-  .is-printing-certificates .certificate-student-name { font-size: 18pt; }
-  .is-printing-certificates .certificate-student-name.long { font-size: 15pt; }
-  .is-printing-certificates .certificate-student-name.very-long { font-size: 12pt; }
+  .is-printing-certificates .certificate-student-name { font-size: 16pt; }
+  .is-printing-certificates .certificate-student-name.long { font-size: 13pt; }
+  .is-printing-certificates .certificate-student-name.very-long { font-size: 10.5pt; }
   .is-printing-certificates .certificate-team-name { font-size: 9pt; }
   .is-printing-certificates .certificate-team-name.long { font-size: 7.5pt; }
   .is-printing-certificates .certificate-team-name.very-long { font-size: 6.5pt; }

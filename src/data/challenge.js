@@ -23,11 +23,6 @@ export const START_RULES = [
 
 export const MATCH_TYPES = ['Practice Run', 'Match 1', 'Match 2', 'Final Match'];
 export const OFFICIAL_MATCH_TYPES = ['Match 1', 'Match 2', 'Final Match'];
-export const SOUND_PRESETS = [
-  ['arena', 'Arena Horn'],
-  ['power', 'Power Surge'],
-  ['rally', 'Robo Rally'],
-];
 export const DRIVER_PHASES = [
   ['Driver 1', '4:00-3:00'], ['Driver 2', '3:00-2:00'],
   ['Driver 3', '2:00-1:00'], ['Driver 4', '1:00-0:00'],
@@ -70,7 +65,6 @@ export const createInitialProject = () => {
       timer: createTimer(),
       scores: teams.map((team) => createTeamScore(team.id)),
       soundEnabled: true,
-      soundPreset: 'arena',
       lockScoringAtEnd: true,
       driverSeen: [false, false, false, false],
     },
@@ -141,7 +135,6 @@ const migrateV2 = (value) => {
       timer: { ...fresh.match.timer, ...(value.match?.timer || {}) },
       scores: [legacyScore, createTeamScore('team-2'), createTeamScore('team-3')],
       soundEnabled: value.match?.soundEnabled !== false,
-      soundPreset: SOUND_PRESETS.some(([id]) => id === value.match?.soundPreset) ? value.match.soundPreset : 'arena',
       lockScoringAtEnd: value.match?.lockScoringAtEnd !== false,
       driverSeen: Array.isArray(value.match?.driverSeen) ? value.match.driverSeen.slice(0, 4) : [false, false, false, false],
     },
@@ -191,7 +184,6 @@ export const normalizeProject = (value) => {
           pins: Math.max(0, Number(score?.pins) || 0),
         };
       }),
-      soundPreset: SOUND_PRESETS.some(([id]) => id === value.match?.soundPreset) ? value.match.soundPreset : 'arena',
       driverSeen: Array.isArray(value.match?.driverSeen) ? value.match.driverSeen.slice(0, 4) : [false, false, false, false],
     },
     results: Array.isArray(value.results) ? value.results : [],

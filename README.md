@@ -18,10 +18,11 @@ The site is designed for three teams of four students. Every team completes the 
 - Team-specific one-minute practice and four-minute full-match practice using names from Teams
 - One shared, timestamp-based 4:00 Match Timer for all three teams, with Pause, Resume and reload recovery
 - Automatic Driver 1–4 rotation for all teams at 3:00, 2:00 and 1:00
-- Visual and optional sound alerts for `CHANGE DRIVER!` and `MATCH ENDED`
+- Visual `CHANGE DRIVER!` and `MATCH ENDED` alerts synchronized with the match timer
 - Three independent live score panels using only `Cups × 5 + Pins × 10`
 - Cup and Pin reference images directly beside the live counters
-- Three selectable competition sound styles, automatic Driver-change cues and a result celebration sound
+- Automatic minute music: `1.mp3`, `2.mp3`, `3.mp3` and `4.mp3` play with Drivers 1-4 and switch at every minute boundary
+- `victory.mp3` starts on Results and loops until the page is closed or changed
 - Optional score lock when a match ends, with a manual correction unlock
 - Per-match rankings plus official tournament standings calculated only from `Match 1 + Match 2 + Final Match`; Practice Run is excluded
 - Automatic winner celebration, tied ranks, local history, printing and CSV export with tournament totals
@@ -118,6 +119,9 @@ public/images/
   neutral-zone.webp        Optimized supplied Neutral Zone photo
   starting-position.webp   Optimized supplied robot start photo
   certificate-template.png Latest supplied signed Certificate.png template
+public/sound/
+  1.mp3 ... 4.mp3         Minute music for Drivers 1-4
+  victory.mp3             Looping Results celebration music
 test/challenge.test.js     Scoring and timing tests
 scripts/
   build.mjs                Production build

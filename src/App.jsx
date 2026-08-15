@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ACTIVITY_TIMELINE, BUILD_STEPS, DRIVER_PHASES, MATCH_TYPES, MISSION, NAV_ITEMS,
-  OFFICIAL_MATCH_TYPES, SOUND_PRESETS, START_RULES, TEAM_COLORS, createTeamScore, createTimer, makeId,
+  OFFICIAL_MATCH_TYPES, START_RULES, TEAM_COLORS, createTeamScore, createTimer, makeId,
 } from './data/challenge';
 import { useProject } from './hooks/useProject';
 import { buildTournamentStandings, calculateScore, driverFromRemaining, formatTime } from './utils/challenge';
@@ -17,27 +17,6 @@ const downloadText = (filename, content, type) => {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-};
-
-const SOUND_PATTERNS = {
-  arena: {
-    start: [[440, 0, .08, 'square'], [660, .1, .12, 'square'], [880, .24, .18, 'square']],
-    change: [[880, 0, .11, 'square'], [880, .16, .11, 'square'], [1175, .32, .2, 'square']],
-    end: [[784, 0, .16, 'square'], [587, .2, .18, 'square'], [392, .42, .38, 'square']],
-    victory: [[523, 0, .13, 'triangle'], [659, .14, .13, 'triangle'], [784, .28, .16, 'triangle'], [1047, .47, .5, 'triangle']],
-  },
-  power: {
-    start: [[330, 0, .1, 'sawtooth', .12, 660], [660, .13, .22, 'sawtooth', .13, 990]],
-    change: [[392, 0, .12, 'sawtooth', .14, 784], [523, .18, .12, 'sawtooth', .14, 1047]],
-    end: [[988, 0, .16, 'sawtooth', .13, 494], [659, .2, .2, 'sawtooth', .13, 330], [247, .45, .4, 'square']],
-    victory: [[392, 0, .12, 'sawtooth', .11, 523], [523, .13, .12, 'sawtooth', .11, 659], [659, .26, .14, 'sawtooth', .11, 784], [988, .43, .46, 'sawtooth', .12, 1319]],
-  },
-  rally: {
-    start: [[523, 0, .09, 'triangle'], [659, .1, .09, 'triangle'], [784, .2, .18, 'triangle']],
-    change: [[784, 0, .09, 'triangle'], [988, .11, .09, 'triangle'], [784, .22, .09, 'triangle'], [1175, .34, .2, 'triangle']],
-    end: [[659, 0, .13, 'triangle'], [523, .15, .13, 'triangle'], [392, .3, .32, 'triangle']],
-    victory: [[523, 0, .1, 'triangle'], [659, .11, .1, 'triangle'], [784, .22, .1, 'triangle'], [988, .33, .1, 'triangle'], [1175, .45, .42, 'triangle']],
-  },
 };
 
 const resizeTeamImage = (file) => new Promise((resolve, reject) => {
@@ -279,7 +258,7 @@ function MiniCounter({ label, count, disabled, onChange }) {
   return <div className="mini-counter"><span className="counter-label"><i className={`game-object-icon ${type}`} aria-hidden="true"><img src="./images/cup-and-pin.jfif" alt="" /></i><b>{label}</b><small>{label === 'Cups' ? '× 5' : '× 10'}</small></span><button type="button" aria-label={`Remove one ${label}`} disabled={disabled || count === 0} onClick={() => onChange(-1)}>−</button><strong>{count}</strong><button type="button" aria-label={`Add one ${label}`} disabled={disabled} onClick={() => onChange(1)}>+</button></div>;
 }
 
-function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchReset, onScoresReset, onSave, onPreviewSound, goTo }) {
+function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchPause, onMatchReset, onScoresReset, onSave, onToggleSound, goTo }) {
   const matchArea = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
   useEffect(() => { const track = () => setIsFullscreen(Boolean(document.fullscreenElement)); document.addEventListener('fullscreenchange', track); return () => document.removeEventListener('fullscreenchange', track); }, []);
@@ -293,10 +272,10 @@ function MatchMode({ project, update, matchTimer, alert, onMatchStart, onMatchRe
   return (
     <main id="main-content" className="match-page"><section ref={matchArea} className={`match-console three-team-match ${alert ? `has-${alert.type}-alert` : ''}`}>
       {alert && <div className={`match-alert alert-${alert.type}`} role="alert"><strong>{alert.message}</strong>{alert.detail && <span>{alert.detail}</span>}</div>}
-      <header className="match-topbar"><div className="match-identity"><label><span>Run</span><select value={project.match.type} onChange={(event) => update('match.type', event.target.value)}>{MATCH_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><b>3 teams · 12 drivers · 1 shared timer</b></div><div className="match-tools"><div className="sound-controls"><button type="button" aria-pressed={project.match.soundEnabled} onClick={() => update('match.soundEnabled', (value) => !value)}>{project.match.soundEnabled ? 'Sound on' : 'Sound off'}</button><select aria-label="Competition sound" value={project.match.soundPreset} onChange={(event) => update('match.soundPreset', event.target.value)}>{SOUND_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select><button type="button" className="sound-preview" aria-label="Preview selected competition sound" onClick={() => onPreviewSound('change', true)}>▶</button></div><button type="button" onClick={toggleFullscreen}>{isFullscreen ? 'Exit full screen' : 'Full screen'}</button><button type="button" onClick={() => goTo('mission')}>Field map</button></div></header>
+      <header className="match-topbar"><div className="match-identity"><label><span>Run</span><select value={project.match.type} onChange={(event) => update('match.type', event.target.value)}>{MATCH_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><b>3 teams · 12 drivers · 1 shared timer</b></div><div className="match-tools"><div className="sound-controls"><button type="button" aria-pressed={project.match.soundEnabled} onClick={onToggleSound}>{project.match.soundEnabled ? 'Sound on' : 'Sound off'}</button><span className="match-track-label" aria-live="polite">♫ Minute {matchTimer.currentDriver + 1} · {matchTimer.currentDriver + 1}.mp3</span></div><button type="button" onClick={toggleFullscreen}>{isFullscreen ? 'Exit full screen' : 'Full screen'}</button><button type="button" onClick={() => goTo('mission')}>Field map</button></div></header>
       <div className="driver-stages">{DRIVER_PHASES.map(([driver, time], index) => <div key={driver} className={`${index === matchTimer.currentDriver ? 'current' : ''} ${index < matchTimer.currentDriver ? 'complete' : ''}`}><span>{index < matchTimer.currentDriver ? '✓' : `0${index + 1}`}</span><strong>{driver}</strong><small>{time}</small></div>)}</div>
       <section className="match-rosters" aria-label="All team driver rosters">{project.teams.map((team, teamIndex) => <article key={team.id} style={{ '--team-color': TEAM_COLORS[teamIndex] }}><div><TeamAvatar team={team} index={teamIndex} /><strong>{team.name}</strong></div><ol>{team.members.map((name, driverIndex) => <li key={`${team.id}-${driverIndex}`} className={driverIndex === matchTimer.currentDriver ? 'current' : ''}><span>D{driverIndex + 1}</span>{name || `Driver ${driverIndex + 1}`}</li>)}</ol></article>)}</section>
-      <div className="match-main-grid"><section className="match-timer" aria-live="polite"><span className="current-driver-label">All teams · Driver {matchTimer.currentDriver + 1}</span><h2>DRIVE</h2><strong className="giant-time">{matchTimer.display}</strong><TimerControls timer={{ ...matchTimer, start: onMatchStart }} onReset={onMatchReset} /></section>
+      <div className="match-main-grid"><section className="match-timer" aria-live="polite"><span className="current-driver-label">All teams · Driver {matchTimer.currentDriver + 1}</span><h2>DRIVE</h2><strong className="giant-time">{matchTimer.display}</strong><TimerControls timer={{ ...matchTimer, start: onMatchStart, pause: onMatchPause }} onReset={onMatchReset} /></section>
         <section className="multi-score-console"><div className="score-heading"><div><span className="eyebrow">Live scoring</span><h2>Three delivery zones</h2></div><button type="button" className="reset-score" onClick={onScoresReset}>Reset all</button></div><div className="team-score-stack">{project.teams.map((team, teamIndex) => {
           const scoreIndex = project.match.scores.findIndex((item) => item.teamId === team.id);
           const score = project.match.scores[scoreIndex] || createTeamScore(team.id);
@@ -344,7 +323,7 @@ function Results({ project, saveCurrent, startNew, clearResults, onReplayCelebra
 }
 
 function CertificateCard({ student }) {
-  const nameClass = student.name.length > 34 ? 'very-long' : student.name.length > 25 ? 'long' : '';
+  const nameClass = student.name.length > 32 ? 'very-long' : student.name.length > 20 ? 'long' : '';
   const teamClass = student.teamName.length > 24 ? 'very-long' : student.teamName.length > 17 ? 'long' : '';
   return <article className="certificate-page"><img src="./images/certificate-template.png" alt="LSTS VEX V5 Certificate of Participation with signature" /><div className={`certificate-student-name ${nameClass}`}>{student.name}</div><div className={`certificate-team-name ${teamClass}`}>{student.teamName}</div></article>;
 }
@@ -374,58 +353,76 @@ export default function App() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [alert, setAlert] = useState(null);
   const alertTimeout = useRef(null);
-  const audioContext = useRef(null);
-  const previousView = useRef(null);
+  const matchAudio = useRef(null);
+  const victoryAudio = useRef(null);
   const goTo = useCallback((view) => { update('currentView', view); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [update]);
   const setMatchTimer = useCallback((value) => update('match.timer', value), [update]);
   const setPracticeTimer = useCallback((value) => update('practice.timer', value), [update]);
-  const playSignal = useCallback((kind = 'change', force = false) => {
+  const stopMatchMusic = useCallback(() => {
+    if (!matchAudio.current) return;
+    matchAudio.current.pause();
+    matchAudio.current.removeAttribute('src');
+    matchAudio.current.load();
+    matchAudio.current = null;
+  }, []);
+  const stopVictoryMusic = useCallback(() => {
+    if (!victoryAudio.current) return;
+    victoryAudio.current.pause();
+    victoryAudio.current.removeAttribute('src');
+    victoryAudio.current.load();
+    victoryAudio.current = null;
+  }, []);
+  const playMatchTrack = useCallback((driverIndex, remainingMs, force = false) => {
+    stopMatchMusic();
     if (!project.match.soundEnabled && !force) return;
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      audioContext.current ||= new AudioContextClass();
-      const context = audioContext.current;
-      context.resume?.().catch?.(() => {});
-      const pattern = SOUND_PATTERNS[project.match.soundPreset]?.[kind] || SOUND_PATTERNS.arena[kind] || SOUND_PATTERNS.arena.change;
-      pattern.forEach(([frequency, start, length, type = 'square', volume = .16, endFrequency = frequency]) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.frequency.setValueAtTime(frequency, context.currentTime + start);
-        if (endFrequency !== frequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, context.currentTime + start + length);
-        oscillator.type = type;
-        gain.gain.setValueAtTime(0.0001, context.currentTime + start);
-        gain.gain.exponentialRampToValueAtTime(volume, context.currentTime + start + .015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + start + length);
-        oscillator.connect(gain).connect(context.destination);
-        oscillator.start(context.currentTime + start);
-        oscillator.stop(context.currentTime + start + length + .03);
-      });
-    } catch { /* Visual alerts remain available. */ }
-  }, [project.match.soundEnabled, project.match.soundPreset]);
+    const audio = new Audio(`./sound/${driverIndex + 1}.mp3`);
+    const elapsedInMinute = Math.max(0, (240_000 - Math.max(0, remainingMs)) % 60_000) / 1000;
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = .78;
+    try { audio.currentTime = elapsedInMinute; } catch { /* The track will start at zero if metadata is not ready. */ }
+    audio.play().catch(() => {});
+    matchAudio.current = audio;
+  }, [project.match.soundEnabled, stopMatchMusic]);
+  const playVictoryMusic = useCallback((force = false) => {
+    stopVictoryMusic();
+    if (!project.match.soundEnabled && !force) return;
+    const audio = new Audio('./sound/victory.mp3');
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = .82;
+    audio.play().catch(() => {});
+    victoryAudio.current = audio;
+  }, [project.match.soundEnabled, stopVictoryMusic]);
   useEffect(() => {
-    const enteringResults = view === 'results' && previousView.current !== 'results';
-    previousView.current = view;
-    if (!enteringResults || !project.results[0]) return undefined;
-    const celebrationTimer = window.setTimeout(() => playSignal('victory'), 450);
-    return () => window.clearTimeout(celebrationTimer);
-  }, [playSignal, project.results, view]);
+    if (view !== 'results' || !project.results[0]) { stopVictoryMusic(); return undefined; }
+    const celebrationTimer = window.setTimeout(() => playVictoryMusic(), 180);
+    return () => { window.clearTimeout(celebrationTimer); stopVictoryMusic(); };
+  }, [playVictoryMusic, project.results, stopVictoryMusic, view]);
+  useEffect(() => { if (view !== 'match') stopMatchMusic(); }, [stopMatchMusic, view]);
   const showAlert = useCallback((type, message, detail, duration = 3200) => { window.clearTimeout(alertTimeout.current); setAlert({ type, message, detail, id: Date.now() }); alertTimeout.current = window.setTimeout(() => setAlert(null), duration); }, []);
-  useEffect(() => () => { window.clearTimeout(alertTimeout.current); audioContext.current?.close?.(); }, []);
+  useEffect(() => () => { window.clearTimeout(alertTimeout.current); stopMatchMusic(); stopVictoryMusic(); }, [stopMatchMusic, stopVictoryMusic]);
   const markDriverSeen = useCallback((index) => update(['match', 'driverSeen', index], true), [update]);
   const matchTimer = useTimestampTimer(project.match.timer, setMatchTimer, {
-    onDriverChange: (nextDriver) => { markDriverSeen(nextDriver); playSignal('change'); showAlert('change', 'CHANGE DRIVER!', `All teams: pass controllers to Driver ${nextDriver + 1}`); },
-    onEnd: () => { markDriverSeen(3); playSignal('end'); showAlert('end', 'MATCH ENDED', 'Stop all robots and confirm the three scores.', 5000); },
+    onDriverChange: (nextDriver) => { markDriverSeen(nextDriver); playMatchTrack(nextDriver, 240_000 - (nextDriver * 60_000)); showAlert('change', 'CHANGE DRIVER!', `All teams: pass controllers to Driver ${nextDriver + 1}`); },
+    onEnd: () => { markDriverSeen(3); stopMatchMusic(); showAlert('end', 'MATCH ENDED', 'Stop all robots and confirm the three scores.', 5000); },
   });
   const practiceTeam = project.teams.find((team) => team.id === project.practice.teamId) || project.teams[0];
   const practiceResolveDriver = useCallback((remaining, duration) => duration === 240_000 ? driverFromRemaining(remaining) : project.practice.driverIndex, [project.practice.driverIndex]);
   const practiceTimer = useTimestampTimer(project.practice.timer, setPracticeTimer, {
     resolveDriver: practiceResolveDriver,
-    onDriverChange: (nextDriver, previousDriver) => { update(['practice', 'checklistByTeam', practiceTeam.id, previousDriver], true); playSignal('change'); showAlert('change', 'CHANGE DRIVER!', practiceTeam.members[nextDriver] || `Driver ${nextDriver + 1}`); },
-    onEnd: () => { if (project.practice.mode === 240_000) update(['practice', 'checklistByTeam', practiceTeam.id], [true, true, true, true]); else update(['practice', 'checklistByTeam', practiceTeam.id, project.practice.driverIndex], true); playSignal('end'); },
+    onDriverChange: (nextDriver, previousDriver) => { update(['practice', 'checklistByTeam', practiceTeam.id, previousDriver], true); showAlert('change', 'CHANGE DRIVER!', practiceTeam.members[nextDriver] || `Driver ${nextDriver + 1}`); },
+    onEnd: () => { if (project.practice.mode === 240_000) update(['practice', 'checklistByTeam', practiceTeam.id], [true, true, true, true]); else update(['practice', 'checklistByTeam', practiceTeam.id, project.practice.driverIndex], true); },
   });
-  const startMatch = () => { markDriverSeen(matchTimer.currentDriver); playSignal('start'); matchTimer.start(); };
-  const resetMatch = () => { if (!window.confirm('Reset the shared 4-minute timer? Team scores will stay unchanged.')) return; matchTimer.reset(); update('match.driverSeen', [false, false, false, false]); update('match.scores', project.teams.map((team) => ({ ...(project.match.scores.find((score) => score.teamId === team.id) || createTeamScore(team.id)), scoringUnlocked: false }))); setAlert(null); };
+  const startMatch = () => { markDriverSeen(matchTimer.currentDriver); playMatchTrack(matchTimer.currentDriver, matchTimer.remainingMs); matchTimer.start(); };
+  const pauseMatch = () => { matchAudio.current?.pause(); matchTimer.pause(); };
+  const toggleMatchSound = () => {
+    const nextEnabled = !project.match.soundEnabled;
+    update('match.soundEnabled', nextEnabled);
+    if (!nextEnabled) { stopMatchMusic(); stopVictoryMusic(); }
+    else if (project.match.timer.status === 'running') playMatchTrack(matchTimer.currentDriver, matchTimer.remainingMs, true);
+  };
+  const resetMatch = () => { if (!window.confirm('Reset the shared 4-minute timer? Team scores will stay unchanged.')) return; stopMatchMusic(); matchTimer.reset(); update('match.driverSeen', [false, false, false, false]); update('match.scores', project.teams.map((team) => ({ ...(project.match.scores.find((score) => score.teamId === team.id) || createTeamScore(team.id)), scoringUnlocked: false }))); setAlert(null); };
   const resetScores = () => { if (!window.confirm('Reset Cups, Pins and Total Score for all three teams?')) return; update('match.scores', project.teams.map((team) => createTeamScore(team.id))); };
   const setPracticeMode = (durationMs) => { if (project.practice.timer.status === 'running' && !window.confirm('Change practice mode and reset the timer?')) return; update('practice.mode', durationMs); update('practice.timer', createTimer(durationMs)); };
   const resetPractice = () => { if (!window.confirm('Reset this practice timer?')) return; practiceTimer.reset(); setAlert(null); };
@@ -444,16 +441,16 @@ export default function App() {
       return { ...current, currentView: navigate ? 'results' : current.currentView, results };
     });
   }, [setProject]);
-  const endAndSave = () => { if (project.match.timer.status !== 'ended') { if (!window.confirm(project.match.timer.status === 'running' ? 'End the match now and save all three team scores?' : 'Save all three team scores for this run?')) return; matchTimer.end(); playSignal('end'); } saveCurrentResult(true); };
-  const startNewMatch = () => { const hasScore = project.match.scores.some((score) => score.cups || score.pins); if (hasScore && !window.confirm('Start a new match? All current team scores will reset to 0.')) return; update('match', { ...project.match, sessionId: makeId(), timer: createTimer(), scores: project.teams.map((team) => createTeamScore(team.id)), driverSeen: [false, false, false, false] }); setAlert(null); goTo('match'); };
+  const endAndSave = () => { if (project.match.timer.status !== 'ended') { if (!window.confirm(project.match.timer.status === 'running' ? 'End the match now and save all three team scores?' : 'Save all three team scores for this run?')) return; stopMatchMusic(); matchTimer.end(); } saveCurrentResult(true); };
+  const startNewMatch = () => { const hasScore = project.match.scores.some((score) => score.cups || score.pins); if (hasScore && !window.confirm('Start a new match? All current team scores will reset to 0.')) return; stopVictoryMusic(); update('match', { ...project.match, sessionId: makeId(), timer: createTimer(), scores: project.teams.map((team) => createTeamScore(team.id)), driverSeen: [false, false, false, false] }); setAlert(null); goTo('match'); };
   const clearResults = () => { if (window.confirm('Clear all saved match results from this device? This cannot be undone.')) update('results', []); };
   return <div className={`app view-${view}`}><a className="skip-link" href="#main-content">Skip to main content</a><Header currentView={view} goTo={goTo} saveState={saveState} teams={project.teams} scores={project.match.scores} currentDriver={matchTimer.currentDriver} />
     {view === 'home' && <Home goTo={goTo} />}
     {view === 'teams' && <TeamsPage project={project} update={update} goTo={goTo} />}
     {view === 'mission' && <Mission acknowledged={project.missionAcknowledged} acknowledge={() => update('missionAcknowledged', true)} openMedia={setSelectedMedia} goTo={goTo} />}
     {view === 'build' && <BuildPractice project={project} update={update} practiceTimer={practiceTimer} setPracticeMode={setPracticeMode} onPracticeReset={resetPractice} goTo={goTo} />}
-    {view === 'match' && <MatchMode project={project} update={update} matchTimer={matchTimer} alert={alert} onMatchStart={startMatch} onMatchReset={resetMatch} onScoresReset={resetScores} onSave={endAndSave} onPreviewSound={playSignal} goTo={goTo} />}
-    {view === 'results' && <Results project={project} saveCurrent={() => saveCurrentResult(false)} startNew={startNewMatch} clearResults={clearResults} onReplayCelebration={() => playSignal('victory', true)} goTo={goTo} />}
+    {view === 'match' && <MatchMode project={project} update={update} matchTimer={matchTimer} alert={alert} onMatchStart={startMatch} onMatchPause={pauseMatch} onMatchReset={resetMatch} onScoresReset={resetScores} onSave={endAndSave} onToggleSound={toggleMatchSound} goTo={goTo} />}
+    {view === 'results' && <Results project={project} saveCurrent={() => saveCurrentResult(false)} startNew={startNewMatch} clearResults={clearResults} onReplayCelebration={() => playVictoryMusic(true)} goTo={goTo} />}
     {view === 'certificate' && <CertificatePage teams={project.teams} goTo={goTo} />}
     {selectedMedia && <FieldViewer media={selectedMedia} onClose={() => setSelectedMedia(null)} />}
   </div>;
