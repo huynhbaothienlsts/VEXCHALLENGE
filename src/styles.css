@@ -619,7 +619,7 @@ td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .certificate-page > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .certificate-student-name, .certificate-team-name { position: absolute; z-index: 2; overflow: hidden; line-height: 1.1; text-align: center; text-overflow: clip; white-space: nowrap; }
 .certificate-student-name { top: 52.2%; left: 17%; right: 16%; font-family: Georgia, "Times New Roman", serif; font-size: clamp(12px, 2vw, 21px); font-weight: 800; letter-spacing: 0; }
-.certificate-team-name { top: 59.05%; left: 36%; right: 20%; color: #171717; font-size: clamp(8px, 1.15vw, 12px); font-weight: 850; letter-spacing: .04em; }
+.certificate-team-name { top: 59.05%; left: 32%; right: 24%; color: #171717; font-size: clamp(8px, 1.15vw, 12px); font-weight: 850; letter-spacing: .04em; }
 .certificate-student-name.long { font-size: clamp(10px, 1.6vw, 17px); }
 .certificate-student-name.very-long { font-size: clamp(8px, 1.28vw, 14px); }
 .certificate-team-name.long { font-size: clamp(7px, .95vw, 10px); }
