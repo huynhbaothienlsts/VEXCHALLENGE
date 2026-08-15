@@ -10,15 +10,18 @@ The site is designed for three teams of four students. Every team completes the 
 
 ## What is included
 
-- Five focused sections: Home, Mission & Field, Build & Practice, Match Mode and Results
+- Seven focused sections: Home, Teams, Mission & Field, Build & Practice, Match Mode, Results and Certificate
+- A three-team roster matrix for all 12 drivers, plus a one-team device selector for independent practice
+- Optional team-photo upload; photos are resized in the browser and shown on Teams and Results
 - The original `Pictures/Field.jpg` field map, with full-screen viewing and zoom controls
-- One-minute individual practice and four-minute full-match practice
-- A timestamp-based 4:00 Match Timer with Pause, Resume and reload recovery
-- Automatic Driver 1–4 rotation at 3:00, 2:00 and 1:00
+- Team-specific one-minute practice and four-minute full-match practice using names from Teams
+- One shared, timestamp-based 4:00 Match Timer for all three teams, with Pause, Resume and reload recovery
+- Automatic Driver 1–4 rotation for all teams at 3:00, 2:00 and 1:00
 - Visual and optional sound alerts for `CHANGE DRIVER!` and `MATCH ENDED`
-- Cup and Pin counters using only `Cups × 5 + Pins × 10`
+- Three independent live score panels using only `Cups × 5 + Pins × 10`
 - Optional score lock when a match ends, with a manual correction unlock
-- Local result history, tied leaderboard ranks, printing and CSV export
+- Automatic post-match ranking, winner celebration, tied ranks, local history, printing and CSV export
+- Certificates populated from the roster and based on the supplied template; print one student or all students to PDF
 - Automatic saving to browser `localStorage`; no account, backend or API key
 - Responsive layouts for laptops, landscape tablets, projectors and phones
 - Keyboard focus states, labels, alt text and reduced-motion support
@@ -63,6 +66,8 @@ The automated tests verify:
 - Negative counts are clamped to zero
 - Driver changes occur at exactly `3:00`, `2:00` and `1:00`
 - Timer formatting ends at `0:00`
+- Three teams keep independent scores
+- Existing version-2 data migrates to the new three-team format
 
 ## Deploy to GitHub Pages
 
@@ -94,8 +99,8 @@ The workflow follows GitHub's documented Pages flow: checkout, build, configure 
 
 ```text
 src/
-  App.jsx                  Main five-section experience and interactions
-  data/challenge.js        Mission, rules, steps and initial local data
+  App.jsx                  Seven-section experience and interactions
+  data/challenge.js        Mission, three-team model and local-data migration
   hooks/useProject.js      localStorage persistence
   utils/challenge.js       Scoring and timer phase utilities
   styles.css               Visual system, responsive and print styles
@@ -104,6 +109,7 @@ public/images/
   v5-clawbot.webp          Supplied Clawbot visual
   cup-and-pin.jfif         Supplied scoring objects
   international-teams.webp Optimized supplied team photo
+  certificate-template.png Exact supplied certificate template
 test/challenge.test.js     Scoring and timing tests
 scripts/
   build.mjs                Production build
@@ -113,13 +119,22 @@ scripts/
 
 ## Local data
 
-Team setup, short improvement notes, practice checks, timer state, score and match history are saved on the current browser and device only.
+All three rosters, compressed team photos, the selected practice team, short improvement notes, practice checks, timer state, three live scores and match history are saved on the current browser and device only.
 
 - Reloading a paused match preserves its time and score.
 - Reloading a running match recalculates time from its real end timestamp.
 - Saving the same match again updates its existing record instead of adding the score twice.
 - **Clear Results** and all timer/score resets require confirmation.
 - Clearing browser storage removes saved data.
+
+## Certificates and PDF export
+
+1. Complete the student names and team names on **Teams**.
+2. Open **Certificate** and select a student to preview.
+3. Choose **Save This Certificate as PDF** for one student, or **Save All as One PDF** for every entered student.
+4. In the browser print window choose **Save as PDF**, paper **A4**, orientation **Portrait**, scale **100%** and margins **None**.
+
+PDF generation uses the browser's print engine, so no server, account or extra library is required.
 
 ## Source assets
 

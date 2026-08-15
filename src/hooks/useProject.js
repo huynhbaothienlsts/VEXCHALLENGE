@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createInitialProject, normalizeProject } from '../data/challenge';
 
-const STORAGE_KEY = 'vex-challenge-control-center-v2';
+const STORAGE_KEY = 'vex-challenge-control-center-v3';
+const LEGACY_STORAGE_KEY = 'vex-challenge-control-center-v2';
 
 const readStoredProject = () => {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
     return stored ? normalizeProject(JSON.parse(stored)) : createInitialProject();
   } catch {
     return createInitialProject();
