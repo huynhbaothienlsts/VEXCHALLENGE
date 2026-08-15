@@ -4,9 +4,11 @@ A fast, student-facing control center for the **VEX Rapid Innovation Challenge**
 
 **Build. Practice. Improve. Compete.**
 
-The site is designed for three teams of four students. Every team completes the same mission:
+The site is designed for three teams of four students. The challenge begins with this driving question:
 
-> Collect as many Cups and Pins as possible from the Supply Zone and deliver them to the team's Delivery Zone.
+> How might we adapt a VEX Clawbot to deliver emergency supplies effectively?
+
+A disaster has made some locations unsafe for people to reach. Each team adapts a Clawbot to move emergency supplies from the shared **Neutral Zone** to its **Delivery Zone**. Cups represent food and medicine; Pins represent tools and medical supplies.
 
 ## What is included
 

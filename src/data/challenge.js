@@ -1,4 +1,11 @@
-export const MISSION = 'Collect as many Cups and Pins as possible from the SUPPLY ZONE and deliver them to your team\'s DELIVERY ZONE.';
+export const DRIVING_QUESTION = 'How might we adapt a VEX Clawbot to deliver emergency supplies effectively?';
+export const EMERGENCY_CONTEXT = 'A disaster has made some locations unsafe for people to reach. Three robot teams must transport vital supplies to receiving stations.';
+export const MISSION = 'Move as many emergency supplies as possible from the NEUTRAL ZONE to your team\'s DELIVERY ZONE.';
+
+export const RELIEF_ROLES = [
+  ['Cups', 'Food & medicine'], ['Pins', 'Tools & medical supplies'],
+  ['Neutral Zone', 'Shared supply depot'], ['Delivery Zones', 'Receiving stations'],
+];
 
 export const NAV_ITEMS = [
   ['home', 'Home'], ['teams', 'Teams'], ['mission', 'Mission & Field'], ['build', 'Build & Practice'],

@@ -70,7 +70,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .hero h1 { margin: 16px 0; font-size: clamp(50px, 7vw, 105px); line-height: .87; letter-spacing: -.065em; text-transform: uppercase; }
 .hero h1 em { color: var(--blue); font-style: normal; }
 .hero-tagline { margin: 0 0 22px; color: var(--yellow); font-size: clamp(19px, 2vw, 26px); font-weight: 850; letter-spacing: .04em; }
-.mission-line { max-width: 670px; margin: 0 0 32px; color: #c5d2e1; font-size: 17px; line-height: 1.55; }
+.driving-question { max-width: 680px; margin: 0 0 8px; color: var(--white); font-size: 16px; line-height: 1.5; }
+.driving-question b { color: var(--blue); }
+.mission-line { max-width: 670px; margin: 0 0 32px; color: #aebed0; font-size: 14px; line-height: 1.55; }
 .hero-visual { position: relative; display: grid; min-height: 520px; place-items: center; }
 .hero-visual img { position: relative; z-index: 2; width: min(90%, 540px); filter: drop-shadow(0 40px 55px rgb(0 0 0 / 45%)); }
 .hero-orbit { position: absolute; width: min(33vw, 470px); aspect-ratio: 1; border: 1px solid rgb(40 169 255 / 40%); border-radius: 50%; box-shadow: inset 0 0 90px rgb(40 169 255 / 8%), 0 0 0 32px rgb(40 169 255 / 3%); }
@@ -105,6 +107,17 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .community-banner div { position: relative; z-index: 2; max-width: 680px; padding: 50px; }
 
 /* Mission */
+.mission-story-lead { margin-bottom: 34px; }
+.mission-story-lead .driving-label { display: block; margin: 24px 0 8px; color: var(--blue); font-size: 12px; font-weight: 900; letter-spacing: .15em; text-transform: uppercase; }
+.mission-story-lead h1 { max-width: 1100px; margin-top: 0; font-size: clamp(38px, 5.5vw, 76px); line-height: 1.02; }
+.mission-story-lead p { max-width: 980px; }
+.emergency-brief { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(0, 1.2fr); gap: 38px; align-items: center; margin-bottom: 30px; padding: clamp(24px, 4vw, 42px); border-left: 4px solid var(--red); border-radius: 0 var(--radius) var(--radius) 0; background: #101c2c; }
+.emergency-mission h2 { margin: 7px 0 10px; font-size: clamp(30px, 3.6vw, 48px); letter-spacing: -.04em; }
+.emergency-mission p { margin: 0; color: #cbd5e1; line-height: 1.55; }
+.relief-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.relief-roles div { min-height: 82px; display: grid; align-content: center; gap: 5px; padding: 15px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.relief-roles dt { color: var(--yellow); font-size: 12px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.relief-roles dd { margin: 0; color: var(--white); font-size: 14px; font-weight: 750; }
 .field-stage { padding: clamp(22px, 4vw, 48px); border: 1px solid var(--line); border-radius: var(--radius); background: #0d1828; box-shadow: var(--shadow); }
 .field-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 28px; }
 .field-heading h2 { margin: 7px 0 0; font-size: 38px; letter-spacing: -.04em; }
@@ -641,6 +654,7 @@ td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 @media (max-width: 820px) {
   .main-nav.nav-open { grid-template-columns: repeat(2, 1fr); }
   .dual-purpose { grid-template-columns: 1fr; }
+  .emergency-brief { grid-template-columns: 1fr; }
   .team-purpose-note { grid-template-columns: 1fr; }
   .team-photo-grid { grid-template-columns: 1fr; }
   .mission-setup-grid { grid-template-columns: 1fr; }
@@ -674,6 +688,7 @@ td small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 @media (max-width: 560px) {
   .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-actions .text-action { align-self: flex-start; }
+  .relief-roles { grid-template-columns: 1fr; }
   .dual-purpose > div { padding: 30px; }
   .roster-heading { display: grid; }
   .roster-row { grid-template-columns: 90px 1fr; }
